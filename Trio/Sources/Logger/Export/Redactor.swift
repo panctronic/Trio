@@ -9,6 +9,9 @@ final class Redactor {
         case pushToken = "push-token"
         case installID = "install-id"
         case secret
+        /// Session tokens that are replaced on every refresh; kept apart from passwords and keys so their
+        /// churn can't push replaced passwords out of `CredentialHistory`.
+        case token
         case email
         case account
         case pumpSerial = "pump-serial"

@@ -40,8 +40,8 @@ struct SensitiveValues {
         ],
         "Medtrum": [
             (["pumpSN"], .pumpSerial),
-            (["sessionToken"], .secret),
-            (["backupSessionToken"], .secret),
+            (["sessionToken"], .token),
+            (["backupSessionToken"], .token),
             (["peripheralIdentifier"], .device)
         ],
         "TandemPumpManager": [
@@ -79,7 +79,7 @@ struct SensitiveValues {
             (["peripheralIdentifier"], .device),
             (["username"], .account),
             (["password"], .secret),
-            (["accessToken"], .secret),
+            (["accessToken"], .token),
             (["clientIdV2"], .secret)
         ],
         "AccuChek": [
@@ -88,8 +88,8 @@ struct SensitiveValues {
             (["sensorInfo", "serialNumber"], .cgmSerial),
             (["pinCode"], .secret),
             (["aesKey"], .secret),
-            (["accessToken"], .secret),
-            (["refreshToken"], .secret)
+            (["accessToken"], .token),
+            (["refreshToken"], .token)
         ]
     ]
 
@@ -142,8 +142,8 @@ struct SensitiveValues {
 
     mutating func add(tidepool service: TidepoolService?) {
         guard let session = service?.session else { return }
-        add(session.accessToken, .secret)
-        add(session.refreshToken, .secret)
+        add(session.accessToken, .token)
+        add(session.refreshToken, .token)
         add(session.username, .email)
         add(session.userId, .account)
     }
@@ -202,8 +202,11 @@ struct SensitiveValues {
             guard let account = SyaiKeychain.loadAccount() else { return }
             add(account.email, .email)
             add(account.userId, .account)
-            for secret in [account.password, account.refreshToken, account.accessToken, account.glucoseSecretKey] {
+            for secret in [account.password, account.glucoseSecretKey] {
                 add(secret, .secret)
+            }
+            for token in [account.refreshToken, account.accessToken] {
+                add(token, .token)
             }
         case let manager as LibreTransmitterManagerV3:
             add(UserDefaults.standard.currentSensor, .cgmSerial)

@@ -111,7 +111,7 @@ import Testing
                 "EversenseKit",
                 ["bleNameString": "SYN-EVR-01", "accessToken": "synthetic-access-token"],
                 "Connecting to: SYN-EVR-01 with synthetic-access-token",
-                "Connecting to: <cgm-serial-1> with <secret-1>"
+                "Connecting to: <cgm-serial-1> with <token-1>"
             ),
             (
                 "AccuChek",

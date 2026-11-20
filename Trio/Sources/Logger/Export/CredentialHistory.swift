@@ -19,8 +19,8 @@ enum CredentialHistory {
     static let keepFor: TimeInterval = LogRetentionPolicy.default.maxAge + 24 * 60 * 60
     /// Bound on stored values (each credential also stores its encoded forms); the least recently seen go first.
     static let maxEntries = 500
-    /// Bound per kind, so values that churn (Tidepool tokens are `.secret` and refresh often) can't push out a
-    /// replaced Nightscout secret or account of another kind.
+    /// Bound per kind, so values that churn (session tokens are `.token` and refresh often) can't push out a
+    /// replaced password, Nightscout secret or account of another kind.
     static let maxEntriesPerKind = 100
     /// `lastSeen` is only refreshed this often, so a foreground transition doesn't rewrite the Keychain item.
     static let refreshInterval: TimeInterval = 60 * 60
@@ -55,15 +55,26 @@ enum CredentialHistory {
         }
     }
 
-    /// Remembers the credentials in use now. Writes only when something changed, and never when the stored history
-    /// couldn't be read (that would replace it with only the current values).
+    /// Remembers the credentials in use now. Writes only when something changed. When the Keychain can't be read
+    /// (e.g. the device is locked) nothing is written, since that would replace the history with only the current
+    /// values. A stored history that can't be decoded is useless, though, so it is replaced by a fresh one rather
+    /// than blocking every later update.
     static func record(_ current: [Redactor.ExactValue], keychain: Keychain, now: Date = Date()) {
-        guard let stored = load(keychain: keychain) else {
+        let stored: [Entry]
+        var replacesUnreadable = false
+        switch keychain.getValue([Entry].self, forKey: keychainKey) as Result<[Entry]?, KeychainError> {
+        case let .success(entries):
+            stored = entries ?? []
+        case .failure(.codingError):
+            warning(.storage, "Recent credentials for log redaction couldn't be decoded; starting a new list")
+            stored = []
+            replacesUnreadable = true
+        case .failure:
             warning(.storage, "Reading recent credentials for log redaction failed; not updating them")
             return
         }
         let updated = merged(stored, with: current, now: now)
-        guard updated != stored else { return }
+        guard updated != stored || replacesUnreadable else { return }
         if case .failure = keychain.setValue(updated, forKey: keychainKey) as Result<Void, KeychainError> {
             warning(.storage, "Storing recent credentials for log redaction failed")
         }
