@@ -24,7 +24,14 @@ extension BinaryFloatingPoint {
         Self(pointInCubicCurve(.zero, p1, p2, CGPoint(x: 2, y: 1), CGFloat(self)).y)
     }
 
+    /// Bounds the value to `range`.
+    ///
+    /// NaN is returned unchanged rather than mapped to a bound: NaN fails every
+    /// comparison, so the old code returned `upperBound`, silently turning an
+    /// undefined result into a valid-looking extreme. Callers must check
+    /// `isFinite` when NaN is possible.
     func clamped(_ range: ClosedRange<Self> = 0 ... 1) -> Self {
+        guard !isNaN else { return self }
         guard self < range.upperBound else { return range.upperBound }
         guard self > range.lowerBound else { return range.lowerBound }
         return self

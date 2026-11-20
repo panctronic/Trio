@@ -83,7 +83,7 @@ extension CGMSettings {
                 )
                 .listRowBackground(Color.chart)
 
-                if state.cgmCurrent.type == .plugin && state.cgmCurrent.id.contains("Libre") {
+                if (state.cgmCurrent.type == .plugin && state.cgmCurrent.id.contains("Libre")) || state.hasStoredCalibrations {
                     Section {
                         NavigationLink(
                             destination: Calibrations.RootView(resolver: resolver),
