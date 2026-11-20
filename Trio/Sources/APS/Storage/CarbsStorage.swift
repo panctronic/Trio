@@ -56,6 +56,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     }
 
     private let makeContext: () -> NSManagedObjectContext
+    private let storeQueue = SerialStoreQueue()
 
     init(resolver: Resolver, contextProvider: (() -> NSManagedObjectContext)? = nil) {
         makeContext = contextProvider ?? { CoreDataStack.shared.newTaskContext() }
@@ -63,6 +64,14 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     }
 
     func storeCarbs(_ entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async throws {
+        // One store at a time: two overlapping Nightscout fetches could both pass filterRemoteEntries before
+        // either saved, and every new remote meal was then stored twice (double COB)
+        try await storeQueue.run {
+            try await self.storeSerially(entries, areFetchedFromRemote: areFetchedFromRemote, nightscoutSiteURL: nightscoutSiteURL)
+        }
+    }
+
+    private func storeSerially(_ entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async throws {
         var entriesToStore = entries
 
         if areFetchedFromRemote {
@@ -861,5 +870,20 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 )
             }
         }
+    }
+}
+
+/// Runs operations one at a time in submission order, including across suspension points.
+private actor SerialStoreQueue {
+    private var tail: Task<Void, Never>?
+
+    func run(_ operation: @escaping () async throws -> Void) async throws {
+        let previous = tail
+        let task = Task {
+            await previous?.value
+            try await operation()
+        }
+        tail = Task { _ = try? await task.value }
+        try await task.value
     }
 }
