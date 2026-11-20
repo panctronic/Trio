@@ -33,6 +33,9 @@ struct LiveActivityView: View {
                 LiveActivityChartView(context: context, additionalState: context.state.detailedViewState)
                     .frame(maxWidth: UIScreen.main.bounds.width * 0.9)
             }
+            // the row shows glucose, delta, IOB and the update time; the chart has no useful spoken form here
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.accessibilitySummary(isStale: context.isStale, includesIOB: true)))
             .addLiveActivityModifiers(isWatchOS: true)
 
         } else if isWatchOS {
@@ -50,6 +53,8 @@ struct LiveActivityView: View {
                     LiveActivityUpdatedLabelView(context: context, isDetailedLayout: false)
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.accessibilitySummary(isStale: context.isStale)))
             .addLiveActivityModifiers(isWatchOS: true)
 
         } else if context.state.useDetailedViewIOS {
@@ -192,6 +197,13 @@ struct LiveActivityView: View {
                     }
                 }
             }
+            // read as one sentence in the order glucose, trend, delta, IOB, COB, time, rather than item by item
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.accessibilitySummary(
+                isStale: context.isStale,
+                includesIOB: context.state.detailedViewState.widgetItems.contains(.iob),
+                includesCOB: context.state.detailedViewState.widgetItems.contains(.cob)
+            )))
             .addLiveActivityModifiers(isWatchOS: false)
         } else {
             let simpleViewStyle = context.state.simpleViewStyle
@@ -218,6 +230,8 @@ struct LiveActivityView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.accessibilitySummary(isStale: context.isStale)))
             .addLiveActivityModifiers(isWatchOS: false, verticalPadding: simpleViewStyle.fontSize.verticalPadding)
         }
     }
@@ -231,6 +245,8 @@ struct LiveActivityExpandedLeadingView: View {
     var body: some View {
         LiveActivityBGAndTrendView(context: context, size: .expanded, glucoseColor: glucoseColor).font(.title2)
             .padding(.leading, 5)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.glucoseAccessibilityLabel(isStale: context.isStale)))
     }
 }
 
@@ -241,6 +257,9 @@ struct LiveActivityExpandedTrailingView: View {
     var body: some View {
         LiveActivityGlucoseDeltaLabelView(context: context, glucoseColor: glucoseColor).font(.title2)
             .padding(.trailing, 5)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.deltaAccessibilityLabel(isStale: context.isStale) ?? ""))
+            .accessibilityHidden(context.state.deltaAccessibilityLabel(isStale: context.isStale) == nil)
     }
 }
 
@@ -265,6 +284,9 @@ struct LiveActivityExpandedCenterView: View {
             .font(Font.caption)
             .foregroundStyle(Color.secondary)
             .addIsWatchOS()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.updatedAccessibilityLabel() ?? ""))
+            .accessibilityHidden(context.state.isInitialState || context.state.updatedAccessibilityLabel() == nil)
     }
 }
 
@@ -276,6 +298,8 @@ struct LiveActivityCompactLeadingView: View {
         LiveActivityBGAndTrendView(context: context, size: .compact, glucoseColor: glucoseColor)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.glucoseAccessibilityLabel(isStale: context.isStale)))
     }
 }
 
@@ -287,6 +311,9 @@ struct LiveActivityCompactTrailingView: View {
         LiveActivityGlucoseDeltaLabelView(context: context, glucoseColor: glucoseColor).padding(.trailing, 4)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.deltaAccessibilityLabel(isStale: context.isStale) ?? ""))
+            .accessibilityHidden(context.state.deltaAccessibilityLabel(isStale: context.isStale) == nil)
     }
 }
 
@@ -297,6 +324,8 @@ struct LiveActivityMinimalView: View {
     var body: some View {
         let (label, characterCount) = bgAndTrend(context: context, size: .minimal, glucoseColor: glucoseColor)
         let adjustedLabel = label.padding(.leading, 5).padding(.trailing, 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(context.state.glucoseAccessibilityLabel(isStale: context.isStale)))
 
         if characterCount < 4 {
             adjustedLabel.fontWidth(.condensed)

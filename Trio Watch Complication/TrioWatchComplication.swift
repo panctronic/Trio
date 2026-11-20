@@ -45,6 +45,7 @@ struct TrioWatchComplicationEntryView: View {
         default:
             Image("ComplicationIcon")
                 .widgetAccentable()
+                .accessibilityLabel(Text(verbatim: "Trio"))
                 .widgetBackground(backgroundView: Color.clear)
         }
     }
@@ -74,6 +75,8 @@ struct TrioAccessoryCircularView: View {
         Image("ComplicationIcon")
             .resizable()
             .widgetAccentable()
+            // the icon only opens the app; without a label VoiceOver reads the asset name
+            .accessibilityLabel(Text(verbatim: "Trio"))
             .widgetBackground(backgroundView: Color.clear)
     }
 }

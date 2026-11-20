@@ -94,3 +94,88 @@ import Testing
         #expect(next.text(now: date("2026-11-14 06:00"), calendar: calendar).contains("Weekend"))
     }
 }
+
+@Suite("Live Activity Accessibility Tests") struct LiveActivityAccessibilityTests {
+    private func state(
+        bg: String = "120",
+        direction: String? = "↗︎",
+        change: String = "+3",
+        date: Date? = Date(timeIntervalSinceReferenceDate: 800_000_000),
+        isInitialState: Bool = false
+    ) -> LiveActivityAttributes.ContentState {
+        LiveActivityAttributes.ContentState(
+            unit: "mg/dL",
+            bg: bg,
+            glucose: 120,
+            direction: direction,
+            change: change,
+            date: date,
+            highGlucose: 180,
+            lowGlucose: 70,
+            target: 100,
+            glucoseColorScheme: "staticColor",
+            useDetailedViewIOS: true,
+            useDetailedViewWatchOS: false,
+            simpleViewStyle: .default,
+            detailedViewState: LiveActivityAttributes.ContentAdditionalState(
+                chart: [],
+                rotationDegrees: 0,
+                cob: 20,
+                iob: 1.5,
+                tdd: 0,
+                isOverrideActive: false,
+                overrideName: "",
+                overrideDate: Date(),
+                overrideDuration: 0,
+                overrideTarget: 0,
+                isTempTargetActive: false,
+                tempTargetName: "",
+                tempTargetDate: Date(),
+                tempTargetDuration: 0,
+                tempTargetTarget: 0,
+                widgetItems: LiveActivityAttributes.LiveActivityItem.defaultItems,
+                minForecast: [],
+                maxForecast: [],
+                forecastLines: [],
+                forecastDisplayType: "cone"
+            ),
+            isInitialState: isInitialState
+        )
+    }
+
+    @Test("Trend arrows are spoken in words, with or without a variation selector") func trendWords() {
+        #expect(LiveActivityAttributes.ContentState.spokenTrend(forArrow: "↗︎") == LiveActivityAttributes.ContentState
+            .spokenTrend(forArrow: "↗"))
+        #expect(LiveActivityAttributes.ContentState.spokenTrend(forArrow: "↗") != nil)
+        #expect(LiveActivityAttributes.ContentState.spokenTrend(forArrow: "↓↓") != nil)
+        #expect(LiveActivityAttributes.ContentState.spokenTrend(forArrow: "↔︎") == nil)
+        #expect(LiveActivityAttributes.ContentState.spokenTrend(forArrow: nil) == nil)
+    }
+
+    @Test("Summary carries value, unit, trend, delta, IOB, COB and update time") func summary() {
+        let fresh = state()
+        let text = fresh.accessibilitySummary(isStale: false, includesIOB: true, includesCOB: true)
+        #expect(text.contains("120"))
+        #expect(text.contains(fresh.spokenUnit))
+        #expect(text.contains(LiveActivityAttributes.ContentState.spokenTrend(forArrow: "↗")!))
+        #expect(text.contains("+3"))
+        #expect(text.contains(fresh.iobAccessibilityLabel))
+        #expect(text.contains(fresh.cobAccessibilityLabel))
+        #expect(text.contains(fresh.updatedAccessibilityLabel()!))
+    }
+
+    @Test("A stale activity says so and drops trend and delta") func stale() {
+        let text = state().glucoseAccessibilityLabel(isStale: true)
+        #expect(text.contains(String(localized: "outdated", comment: "Accessibility: a glucose reading that is no longer current")))
+        #expect(!text.contains("+3"))
+        #expect(state().deltaAccessibilityLabel(isStale: true) == nil)
+    }
+
+    @Test("Expired and empty states") func emptyStates() {
+        #expect(state(isInitialState: true).accessibilitySummary(isStale: false) ==
+            String(localized: "Live Activity Expired. Open Trio to Refresh"))
+        #expect(state(bg: "--").glucoseAccessibilityLabel(isStale: false) ==
+            String(localized: "Glucose unavailable", comment: "Accessibility: no fresh glucose"))
+        #expect(state(date: nil).updatedAccessibilityLabel() == nil)
+    }
+}
