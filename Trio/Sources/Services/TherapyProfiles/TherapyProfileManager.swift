@@ -110,10 +110,14 @@ protocol TherapyProfileManager: AnyObject {
     /// `activeProfileChanged` without running `write` when another profile is active or the active profile's values no
     /// longer match `expectedFingerprint`, and `pumpSuspended` when `write` sends the basal schedule to a suspended pump.
     /// Throws `liveSettingsNotStored` when `write` succeeded but storing the active profile's values failed.
+    /// `proposed` is the active profile with the editor's change applied. It is checked like a profile save before `write`
+    /// runs, and `invalidValues` is thrown when the change introduces a value the profile checks refuse (e.g. a basal rate
+    /// above max basal, which oref would otherwise silently cap).
     @discardableResult func saveLiveSettings(
         expectedActiveName: String,
         expectedFingerprint: String,
         writesBasalSchedule: Bool,
+        proposed: TrioTherapyProfile?,
         write: @escaping @Sendable() async throws -> Void
     ) async throws -> TrioTherapyProfile
     /// Replaces the stored profiles and scheduled switches and makes `activeProfileName` active. The live settings already
@@ -161,6 +165,7 @@ extension TherapyProfileManager {
             expectedActiveName: expectedActiveName,
             expectedFingerprint: expectedFingerprint,
             writesBasalSchedule: false,
+            proposed: nil,
             write: write
         )
     }
@@ -417,6 +422,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         expectedActiveName: String,
         expectedFingerprint: String,
         writesBasalSchedule: Bool,
+        proposed: TrioTherapyProfile?,
         write: @escaping @Sendable() async throws -> Void
     ) async throws -> TrioTherapyProfile {
         let (saved, stored) = try await serializer.run { () -> (TrioTherapyProfile, Bool) in
@@ -425,6 +431,12 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
             guard active.name == expectedActiveName, active.matchesFingerprint(expectedFingerprint) else {
                 warning(.settings, "Therapy settings edit refused, the active profile changed while editing")
                 throw TherapyProfileError.activeProfileChanged(expected: expectedActiveName, current: active.name)
+            }
+            if let proposed,
+               let reason = TherapyProfileValidator.validateEdit(from: active, to: proposed, basalLimits: self.basalLimits)
+            {
+                warning(.settings, "Therapy settings edit refused: \(reason)")
+                throw TherapyProfileError.invalidValues(reason)
             }
             if writesBasalSchedule, self.isPumpSuspended {
                 warning(.settings, "Basal schedule not sent, the pump is suspended")
