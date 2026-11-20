@@ -15,8 +15,12 @@ protocol CarbsStorage {
     /// Builds a single, real, locally-entered carb entry ready to pass to `storeCarbs`.
     func makeCarbEntry(carbs: Decimal, date: Date) -> CarbsEntry
     /// Swaps a stored meal in one Core Data transaction.
-    func replaceCarbs(_ treatmentObjectID: NSManagedObjectID, with entry: CarbsEntry) async throws
-    func deleteCarbsEntryStored(_ treatmentObjectID: NSManagedObjectID) async
+    /// - Returns: The fpuID of unlinked carb equivalents deleted with an old meal that had no fpuID, so remote copies
+    ///   can be deleted too.
+    @discardableResult func replaceCarbs(_ treatmentObjectID: NSManagedObjectID, with entry: CarbsEntry) async throws -> UUID?
+    /// - Returns: The fpuID of unlinked carb equivalents deleted with a meal that had no fpuID, so remote copies
+    ///   can be deleted too.
+    @discardableResult func deleteCarbsEntryStored(_ treatmentObjectID: NSManagedObjectID) async -> UUID?
     func syncDate() -> Date
     func getCarbsForAlgorithm(additionalCarbs: Decimal?, carbsDate: Date?) async throws -> [CarbsEntry]
     func getCarbsNotYetUploadedToNightscout() async throws -> [NightscoutTreatment]
@@ -59,45 +63,27 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     }
 
     func storeCarbs(_ entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async throws {
-        // A meal with fat or protein must share an fpuID with its carb equivalents, or deleting the meal leaves them behind
-        var entriesToStore = entries.map(Self.withFPUIDIfNeeded)
+        var entriesToStore = entries
 
         if areFetchedFromRemote {
             entriesToStore = try await filterRemoteEntries(entries: entriesToStore)
         }
 
-        // Check for FPU-only entries (fat/protein without carbs)
-        let fpuOnlyEntries = entriesToStore.filter { entry in
-            entry.carbs == 0 && (entry.fat ?? 0 > 0 || entry.protein ?? 0 > 0)
-        }
-
-        // Create additional Carb (non-FPU) entries with fat/protein amounts and carbs == 0
-        for entry in fpuOnlyEntries {
-            let additionalEntry = CarbsEntry(
-                id: entry.id,
-                createdAt: entry.createdAt,
-                actualDate: entry.actualDate,
-                carbs: Decimal(0),
-                fat: entry.fat,
-                protein: entry.protein,
-                note: entry.note,
-                enteredBy: entry.enteredBy,
-                isFPU: false, // it should be a Carb entry
-                fpuID: entry.fpuID
+        // Each meal is stored with its own carb equivalents. Only the last entry used to be saved, so a Nightscout
+        // fetch returning several new meals kept one, and its equivalents took the first entry's fpuID.
+        // A meal with fat or protein must share an fpuID with its equivalents, or deleting it leaves them behind.
+        for entry in entriesToStore.map(Self.withFPUIDIfNeeded) {
+            try await saveCarbsToCoreData(
+                entry,
+                areFetchedFromRemote: areFetchedFromRemote,
+                nightscoutSiteURL: nightscoutSiteURL
             )
-            entriesToStore.append(additionalEntry)
+            await saveCarbEquivalents(
+                for: entry,
+                areFetchedFromRemote: areFetchedFromRemote,
+                nightscoutSiteURL: nightscoutSiteURL
+            )
         }
-
-        await saveCarbsToCoreData(
-            entries: entriesToStore,
-            areFetchedFromRemote: areFetchedFromRemote,
-            nightscoutSiteURL: nightscoutSiteURL
-        )
-        await saveCarbEquivalents(
-            entries: entriesToStore,
-            areFetchedFromRemote: areFetchedFromRemote,
-            nightscoutSiteURL: nightscoutSiteURL
-        )
     }
 
     /// Gives a meal with fat or protein an `fpuID` if it has none, so the meal and the carb equivalents made from it
@@ -138,14 +124,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         // Since we are not dealing with NSManagedObjects directly it is safe to pass properties between threads
         let existingTimestamps = Set(existing24hCarbEntries.compactMap { $0["date"] as? Date })
 
-        // Remove all entries that have a matching date in existingTimestamps
-        var filteredEntries = entries
-        filteredEntries.removeAll { entry in
-            let entryDate = entry.actualDate ?? entry.createdAt
-            return existingTimestamps.contains(entryDate)
+        // Remove all entries that have a matching date in existingTimestamps, and repeats within the batch, since
+        // every entry of a batch is now stored
+        var seenTimestamps = existingTimestamps
+        return entries.filter { entry in
+            seenTimestamps.insert(entry.actualDate ?? entry.createdAt).inserted
         }
-
-        return filteredEntries
     }
 
     /**
@@ -306,36 +290,35 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         return buckets
     }
 
-    private func saveCarbEquivalents(entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async {
-        guard let lastEntry = entries.last else { return }
+    private func saveCarbEquivalents(for entry: CarbsEntry, areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async {
+        let fat = entry.fat ?? 0
+        let protein = entry.protein ?? 0
+        guard fat > 0 || protein > 0 else { return }
 
-        if let fat = lastEntry.fat, let protein = lastEntry.protein, fat > 0 || protein > 0 {
-            let (futureCarbEquivalents, carbEquivalentCount) = processFPU(
-                entries: entries,
-                fat: fat,
-                protein: protein,
-                createdAt: lastEntry.createdAt,
-                actualDate: lastEntry.actualDate
-            )
+        let (futureCarbEquivalents, carbEquivalentCount) = processFPU(
+            entries: [entry],
+            fat: fat,
+            protein: protein,
+            createdAt: entry.createdAt,
+            actualDate: entry.actualDate
+        )
 
-            if carbEquivalentCount > 0 {
-                await saveFPUToCoreDataAsBatchInsert(entries: futureCarbEquivalents, areFetchedFromRemote: areFetchedFromRemote)
+        if carbEquivalentCount > 0 {
+            await saveFPUToCoreDataAsBatchInsert(entries: futureCarbEquivalents, areFetchedFromRemote: areFetchedFromRemote)
 
-                // Equivalents of a downloaded meal are known to Nightscout through the meal's `_id`.
-                if areFetchedFromRemote, let objectId = lastEntry.id {
-                    let localIds = futureCarbEquivalents.compactMap(\.id) + [futureCarbEquivalents.first?.fpuID].compactMap { $0 }
-                    NightscoutObjectIdStore.shared.record(localIds.map { ($0, objectId) }, fromSite: nightscoutSiteURL)
-                }
+            // Equivalents of a downloaded meal are known to Nightscout through the meal's `_id`.
+            if areFetchedFromRemote, let objectId = entry.id {
+                let localIds = futureCarbEquivalents.compactMap(\.id) + [futureCarbEquivalents.first?.fpuID].compactMap { $0 }
+                NightscoutObjectIdStore.shared.record(localIds.map { ($0, objectId) }, fromSite: nightscoutSiteURL)
             }
         }
     }
 
-    private func saveCarbsToCoreData(entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async {
-        guard let entry = entries.last else { return }
-
+    /// Saves one meal root. Throws if Core Data cannot save it, so callers never act on carbs that were not stored.
+    private func saveCarbsToCoreData(_ entry: CarbsEntry, areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async throws {
         let context = makeContext()
         context.name = "saveCarbsToCoreData"
-        await context.perform {
+        try await context.perform {
             self.insertCarbEntry(
                 entry,
                 into: context,
@@ -343,11 +326,13 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 nightscoutSiteURL: nightscoutSiteURL
             )
 
+            guard context.hasChanges else { return }
             do {
-                guard context.hasChanges else { return }
                 try context.save()
             } catch {
                 warning(.storage, "Saving carb entry failed", error: error)
+                context.rollback()
+                throw error
             }
         }
     }
@@ -372,7 +357,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         newItem.isUploadedToHealth = false
         newItem.isUploadedToTidepool = false
 
-        if entry.fat != nil, entry.protein != nil, let fpuId = entry.fpuID {
+        // Set whenever there is one: a meal with only fat or only protein still has carb equivalents to link
+        if let fpuId = entry.fpuID {
             newItem.fpuID = UUID(uuidString: fpuId)
         }
 
@@ -397,9 +383,16 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     ///
     /// The deletes and the inserts go through the same context and are committed by a single `save()`.
     /// A failure therefore leaves the old meal in place rather than deleting it without a replacement.
-    func replaceCarbs(_ treatmentObjectID: NSManagedObjectID, with entry: CarbsEntry) async throws {
+    @discardableResult func replaceCarbs(
+        _ treatmentObjectID: NSManagedObjectID,
+        with replacement: CarbsEntry
+    ) async throws -> UUID? {
+        // The new meal and its new carb equivalents must share an fpuID
+        let entry = Self.withFPUIDIfNeeded(replacement)
         var carbEquivalents: [CarbsEntry] = []
-        if let fat = entry.fat, let protein = entry.protein, fat > 0 || protein > 0 {
+        if (entry.fat ?? 0) > 0 || (entry.protein ?? 0) > 0 {
+            let fat = entry.fat ?? 0
+            let protein = entry.protein ?? 0
             (carbEquivalents, _) = processFPU(
                 entries: [entry],
                 fat: fat,
@@ -413,7 +406,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         context.name = "replaceCarbs"
         context.transactionAuthor = "replaceCarbs"
 
-        try await context.perform {
+        let orphanedFPUID: UUID? = try await context.perform {
             // A fetch reads the store, so rows removed by a batch delete are not served from the row cache.
             let rootRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
             rootRequest.predicate = NSPredicate(format: "SELF == %@", treatmentObjectID)
@@ -424,6 +417,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             }
 
             // Deleted through the context instead of an NSBatchDeleteRequest, which would commit on its own.
+            var orphanedFPUID: UUID?
             if let fpuID = storedEntry.fpuID {
                 let familyRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
                 familyRequest.predicate = NSPredicate(format: "fpuID == %@", fpuID as CVarArg)
@@ -431,6 +425,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                     context.delete(entryToDelete)
                 }
             } else {
+                // Otherwise an old unlinked meal's equivalents would stay next to the new ones: double FPU COB
+                orphanedFPUID = self.deleteOrphanedCarbEquivalents(of: storedEntry, in: context)
                 context.delete(storedEntry)
             }
 
@@ -440,9 +436,11 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             }
 
             try context.save()
+            return orphanedFPUID
         }
 
         updateSubject.send(())
+        return orphanedFPUID
     }
 
     private func saveFPUToCoreDataAsBatchInsert(entries: [CarbsEntry], areFetchedFromRemote: Bool) async {
@@ -565,11 +563,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         )
     }
 
-    func deleteCarbsEntryStored(_ treatmentObjectID: NSManagedObjectID) async {
+    @discardableResult func deleteCarbsEntryStored(_ treatmentObjectID: NSManagedObjectID) async -> UUID? {
         let context = makeContext()
         context.name = "deleteCarbsEntryStored"
 
         var carbEntryFromCoreData: CarbEntryStored?
+        var deletedOrphanFPUID: UUID?
 
         await context.perform {
             do {
@@ -602,23 +601,13 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 // entry has no fpuID
                 // => it's a carb-only entry. use its ID to for deletion
                 else {
-                    // Meals with fat or protein saved without an fpuID (e.g. by older Shortcut versions) left their carb
-                    // equivalents under an fpuID of their own. Delete those too when they can be matched unambiguously.
-                    if let orphanedFPUID = try self.orphanedCarbEquivalentsID(for: carbEntry, in: context) {
-                        let orphanRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
-                        orphanRequest.predicate = NSPredicate(
-                            format: "fpuID == %@ AND isFPU == YES",
-                            orphanedFPUID as CVarArg
-                        )
-                        let orphans = try context.fetch(orphanRequest)
-                        orphans.forEach(context.delete)
-                        debug(.storage, "Deleting \(orphans.count) unlinked carb equivalents with meal")
-                    }
+                    let orphanedFPUID = self.deleteOrphanedCarbEquivalents(of: carbEntry, in: context)
 
                     context.delete(carbEntry)
 
                     guard context.hasChanges else { return }
                     try context.save()
+                    deletedOrphanFPUID = orphanedFPUID
 
                     debug(.storage, "Deleted carb entry")
                 }
@@ -627,6 +616,23 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 warning(.storage, "Deleting carb entry failed", error: error)
             }
         }
+        return deletedOrphanFPUID
+    }
+
+    /// Meals with fat or protein saved without an fpuID (e.g. by older Shortcut versions) left their carb equivalents
+    /// under an fpuID of their own. Deletes those in `context`, without saving, when they match `meal` unambiguously.
+    /// A failed lookup deletes nothing extra and never stops the meal itself from being deleted.
+    /// Must be called on `context`'s queue.
+    /// - Returns: The fpuID of the deleted equivalents.
+    private func deleteOrphanedCarbEquivalents(of meal: CarbEntryStored, in context: NSManagedObjectContext) -> UUID? {
+        guard let orphanedFPUID = try? orphanedCarbEquivalentsID(for: meal, in: context) else { return nil }
+
+        let orphanRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+        orphanRequest.predicate = NSPredicate(format: "fpuID == %@ AND isFPU == YES", orphanedFPUID as CVarArg)
+        guard let orphans = try? context.fetch(orphanRequest), !orphans.isEmpty else { return nil }
+        orphans.forEach(context.delete)
+        debug(.storage, "Deleting \(orphans.count) unlinked carb equivalents with meal")
+        return orphanedFPUID
     }
 
     /// Finds the carb equivalents made from `meal` when the meal itself has no `fpuID` to link them.

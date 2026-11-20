@@ -724,11 +724,52 @@ import Testing
 
     @Test("Deleting an unlinked fat/protein meal also deletes its carb equivalents") func testDeleteUnlinkedMeal() async throws {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        _ = try await insertUnlinkedMeal(at: date, equivalentsAfter: [3600, 5400])
+        let equivalentsID = try await insertUnlinkedMeal(at: date, equivalentsAfter: [3600, 5400])
 
-        await storage.deleteCarbsEntryStored(try await mealRow(at: date))
+        let deletedID = await storage.deleteCarbsEntryStored(try await mealRow(at: date))
 
         #expect(try await allStoredRows().isEmpty, "No phantom carb equivalents may stay behind")
+        #expect(deletedID == equivalentsID, "The deleted equivalents' fpuID is returned for the remote delete")
+    }
+
+    @Test("Replacing an unlinked fat/protein meal also replaces its carb equivalents") func testReplaceUnlinkedMeal() async throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let oldEquivalentsID = try await insertUnlinkedMeal(at: date, equivalentsAfter: [3600, 5400])
+
+        let replacement = CarbsEntry(
+            id: UUID().uuidString, createdAt: date, actualDate: date, carbs: 20, fat: 50, protein: 100,
+            note: nil, enteredBy: "Test", isFPU: false, fpuID: nil
+        )
+        let deletedID = try await storage.replaceCarbs(try await mealRow(at: date), with: replacement)
+
+        let rows = try await allStoredRows()
+        let root = rows.first { !$0.isFPU }
+        #expect(deletedID == oldEquivalentsID)
+        #expect(!rows.contains { $0.fpuID == oldEquivalentsID }, "The old equivalents must not add COB next to the new ones")
+        #expect(root?.fpuID != nil, "The replacement is linked to its new equivalents")
+        #expect(rows.filter(\.isFPU).allSatisfy { $0.fpuID == root?.fpuID })
+    }
+
+    @Test("Every entry of a batch is stored with its own carb equivalents") func testStoreBatch() async throws {
+        let first = Date(timeIntervalSince1970: 1_700_000_000)
+        let second = first.addingTimeInterval(3 * 60 * 60)
+        let entries = [first, second].map { date in
+            CarbsEntry(
+                id: UUID().uuidString, createdAt: date, actualDate: date, carbs: 30, fat: 50, protein: 100,
+                note: nil, enteredBy: "Nightscout", isFPU: false, fpuID: nil
+            )
+        }
+        try await storage.storeCarbs(entries, areFetchedFromRemote: false)
+
+        let rows = try await allStoredRows()
+        let roots = rows.filter { !$0.isFPU }
+        #expect(roots.count == 2, "No entry of the batch may be dropped")
+        #expect(Set(roots.compactMap(\.fpuID)).count == 2, "Each meal has its own fpuID")
+        for root in roots {
+            let equivalents = rows.filter { $0.isFPU && $0.fpuID == root.fpuID }
+            #expect(!equivalents.isEmpty, "Each meal's equivalents share its fpuID")
+        }
+        #expect(rows.filter(\.isFPU).allSatisfy { row in roots.contains { $0.fpuID == row.fpuID } })
     }
 
     @Test("Carb equivalents of another meal are kept") func testDeleteUnlinkedMealKeepsLinkedEquivalents() async throws {

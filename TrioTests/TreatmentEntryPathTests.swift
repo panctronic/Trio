@@ -60,6 +60,16 @@ import Testing
         #expect(BaseCarbsStorage.withFPUIDIfNeeded(linked).fpuID == fpuID)
     }
 
+    @Test("Unlinked carb equivalents deleted with a meal are deleted remotely too") func testSnapshotLinksOrphans() {
+        let orphanID = UUID()
+        let unlinked = MealSnapshot(id: UUID(), fpuID: nil, date: now, carbs: 20, fat: 30, protein: 10, note: nil)
+        #expect(unlinked.linkingCarbEquivalents(orphanID).fpuID == orphanID)
+        #expect(unlinked.linkingCarbEquivalents(nil) == unlinked)
+
+        let linked = MealSnapshot(id: UUID(), fpuID: UUID(), date: now, carbs: 20, fat: 30, protein: 10, note: nil)
+        #expect(linked.linkingCarbEquivalents(orphanID) == linked, "A meal's own fpuID is never replaced")
+    }
+
     // MARK: - Shortcut bolus
 
     @Test("Shortcut confirmation names the rounded amount") func testShortcutConfirmationRounded() {
