@@ -1137,6 +1137,9 @@
     "last loop %@ ago" : {
       "comment" : "Accessibility: IOB hint when the last loop is overdue; %@ is a duration like \"15 minutes\""
     },
+    "Nightscout Not Connected" : {
+      "comment" : "Home panel title"
+    },
     "no data" : {
       "comment" : "Accessibility: watch value that is not available or outdated"
     },
@@ -1202,6 +1205,9 @@
     },
     "updated at %@" : {
       "comment" : "Accessibility: Live Activity update time; %@ is a clock time"
+    },
+    "Uploads are on, but the Nightscout URL or API secret is missing. Tap to check." : {
+      "comment" : "Home panel when Nightscout upload is enabled without credentials"
     },
     "Usage Data" : {
       "comment" : "Onboarding step title for the usage data sharing choice"

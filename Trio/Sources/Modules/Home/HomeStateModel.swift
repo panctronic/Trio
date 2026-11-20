@@ -131,6 +131,9 @@ extension Home {
         var pumpStatusBadgeImage: UIImage?
         var pumpStatusBadgeColor: Color?
         var tidepoolLoginRequired = false
+        /// Nightscout upload is on but the URL or secret reads back empty; see `refreshNightscoutCredentialsCheck`.
+        var nightscoutCredentialsMissing = false
+        @ObservationIgnored @Injected() var keychain: Keychain!
         var cgmAvailable: Bool = false
         var cgmDisplayState: CgmDisplayState?
         var cgmProgressHighlight: DeviceLifecycleProgress?
@@ -551,6 +554,21 @@ extension Home {
                 .store(in: &subscriptions)
         }
 
+        /// Re-reads the Nightscout credentials so a missing URL or secret is never silent while upload is on.
+        func refreshNightscoutCredentialsCheck() {
+            guard let missing = MultiUsePanelState.nightscoutCredentialsMissing(
+                uploadEnabled: settingsManager.settings.isUploadEnabled,
+                url: keychain.getValue(String.self, forKey: NightscoutConfig.Config.urlKey),
+                secret: keychain.getValue(String.self, forKey: NightscoutConfig.Config.secretKey)
+            ) else { return }
+            if missing != nightscoutCredentialsMissing {
+                nightscoutCredentialsMissing = missing
+                if missing {
+                    warning(.nightscout, "Nightscout upload is on, but the URL or API secret is missing")
+                }
+            }
+        }
+
         private func updateActiveTherapyProfileName() {
             activeTherapyProfileName = therapyProfileManager.profiles().count > 1 ? therapyProfileManager.activeProfileName : nil
             scheduledProfileSwitches = activeTherapyProfileName == nil ? [] : therapyProfileManager.scheduledSwitches()
@@ -573,6 +591,7 @@ extension Home {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.timerDate = Date()
+                    self.refreshNightscoutCredentialsCheck()
                     // pump status is not observable; a status-only change writes no event
                     if self.manualTempBasal != self.apsManager.isManualTempBasal {
                         self.manualTempBasal = self.apsManager.isManualTempBasal

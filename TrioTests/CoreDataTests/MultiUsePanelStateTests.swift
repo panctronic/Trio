@@ -16,6 +16,7 @@ import Testing
         tidepoolLoginRequired: Bool = false,
         hasUnacknowledgedReleaseNotes: Bool = false,
         telemetryConsentUndecided: Bool = false,
+        nightscoutCredentialsMissing: Bool = false,
         dosingMode: DosingMode = .closed
     ) -> MultiUsePanelState {
         MultiUsePanelState.resolve(
@@ -26,6 +27,7 @@ import Testing
             tidepoolLoginRequired: tidepoolLoginRequired,
             hasUnacknowledgedReleaseNotes: hasUnacknowledgedReleaseNotes,
             telemetryConsentUndecided: telemetryConsentUndecided,
+            nightscoutCredentialsMissing: nightscoutCredentialsMissing,
             dosingMode: dosingMode,
             now: now
         )
@@ -129,5 +131,32 @@ import Testing
         #expect(resolve(lastGlucoseDate: fresh, tidepoolLoginRequired: true, telemetryConsentUndecided: true) ==
             .tidepoolLoginRequired)
         #expect(resolve(lastGlucoseDate: stale, telemetryConsentUndecided: true) == .cgmStale)
+    }
+
+    @Test("Missing Nightscout credentials warn after dosing warnings, before Tidepool") func testNightscoutCredentialsMissing() {
+        #expect(resolve(lastGlucoseDate: fresh, nightscoutCredentialsMissing: true) == .nightscoutCredentialsMissing)
+        #expect(resolve(lastGlucoseDate: fresh, tidepoolLoginRequired: true, nightscoutCredentialsMissing: true) ==
+            .nightscoutCredentialsMissing)
+        #expect(resolve(lastGlucoseDate: fresh, maxIOB: 0, nightscoutCredentialsMissing: true) == .maxIOBZero)
+    }
+
+    @Test("Credentials count as missing only when they definitely read back empty") func testNightscoutCredentialCheck() {
+        let unreadable = Result<String?, KeychainError>.failure(.darwinError(-25308))
+        #expect(MultiUsePanelState.nightscoutCredentialsMissing(
+            uploadEnabled: true, url: .success("https://ns.example"), secret: .success("secret")
+        ) == false)
+        #expect(MultiUsePanelState.nightscoutCredentialsMissing(
+            uploadEnabled: true, url: .success(nil), secret: .success("secret")
+        ) == true)
+        #expect(MultiUsePanelState.nightscoutCredentialsMissing(
+            uploadEnabled: true, url: .success("https://ns.example"), secret: .success("  ")
+        ) == true)
+        #expect(MultiUsePanelState.nightscoutCredentialsMissing(
+            uploadEnabled: false, url: .success(nil), secret: .success(nil)
+        ) == false)
+        // locked phone: keep whatever was shown
+        #expect(MultiUsePanelState.nightscoutCredentialsMissing(
+            uploadEnabled: true, url: unreadable, secret: .success(nil)
+        ) == nil)
     }
 }
