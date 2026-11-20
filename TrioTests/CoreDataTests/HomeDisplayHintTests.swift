@@ -29,3 +29,68 @@ import Testing
         #expect(twoDays.lastLoopDate == nil)
     }
 }
+
+@Suite("Next Therapy Profile Switch Tests") struct NextTherapyProfileSwitchTests {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Stockholm")!
+        return calendar
+    }
+
+    private func date(_ text: String) -> Date {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.date(from: text)!
+    }
+
+    // 2026-11-13 is a Friday
+    private let nightFriday = ScheduledProfileSwitch(id: "n", profileName: "Night", weekday: 6, time: 22 * 3600)
+    private let dayFriday = ScheduledProfileSwitch(id: "d", profileName: "Default", weekday: 6, time: 18 * 3600)
+    private let weekendSaturday = ScheduledProfileSwitch(id: "w", profileName: "Weekend", weekday: 7, time: 7 * 3600)
+
+    @Test("Finds the next start of another profile") func nextStart() throws {
+        let next = try #require(NextTherapyProfileSwitch.find(
+            in: [weekendSaturday, nightFriday],
+            activeProfileName: "Default",
+            after: date("2026-11-13 12:00"),
+            calendar: calendar
+        ))
+        #expect(next == NextTherapyProfileSwitch(profileName: "Night", date: date("2026-11-13 22:00")))
+    }
+
+    @Test("Skips starts of the profile that is already active") func skipsActiveProfile() throws {
+        let next = try #require(NextTherapyProfileSwitch.find(
+            in: [dayFriday, nightFriday],
+            activeProfileName: "Default",
+            after: date("2026-11-13 12:00"),
+            calendar: calendar
+        ))
+        #expect(next.profileName == "Night")
+    }
+
+    @Test("Paused starts and an empty schedule show nothing") func pausedOrEmpty() {
+        var paused = nightFriday
+        paused.paused = true
+        #expect(NextTherapyProfileSwitch.find(
+            in: [paused],
+            activeProfileName: "Default",
+            after: date("2026-11-13 12:00"),
+            calendar: calendar
+        ) == nil)
+        #expect(NextTherapyProfileSwitch.find(
+            in: [],
+            activeProfileName: "Default",
+            after: date("2026-11-13 12:00"),
+            calendar: calendar
+        ) == nil)
+    }
+
+    @Test("Names the profile in the text") func text() {
+        let next = NextTherapyProfileSwitch(profileName: "Weekend", date: date("2026-11-14 07:00"))
+        #expect(next.text(now: date("2026-11-13 12:00"), calendar: calendar).contains("Weekend"))
+        #expect(next.text(now: date("2026-11-14 06:00"), calendar: calendar).contains("Weekend"))
+    }
+}

@@ -106,6 +106,11 @@ extension Home {
             }
             .overlay(alignment: .topLeading) {
                 if let profileName = state.activeTherapyProfileName {
+                    let nextSwitch = NextTherapyProfileSwitch.find(
+                        in: state.scheduledProfileSwitches,
+                        activeProfileName: profileName,
+                        after: state.timerDate
+                    )
                     HStack(spacing: 3) {
                         Image(systemName: "person.crop.circle")
                             .font(.caption2.weight(.semibold))
@@ -113,6 +118,17 @@ extension Home {
                             .font(.footnote.weight(.semibold))
                             .fontDesign(.rounded)
                             .lineLimit(1)
+                        if let nextSwitch {
+                            // when the scheduled switch happens; the name truncates before the time does
+                            Image(systemName: "arrow.right")
+                                .font(.caption2.weight(.semibold))
+                            Text(nextSwitch.shortTimeText(now: state.timerDate))
+                                .font(.footnote.weight(.semibold))
+                                .fontDesign(.rounded)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .layoutPriority(1)
+                        }
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -121,7 +137,11 @@ extension Home {
                     .frame(height: chartHeight * 0.10)
                     .padding(.leading, 16)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("Active profile \(profileName)"))
+                    .accessibilityLabel(Text(
+                        [String(localized: "Active profile \(profileName)"), nextSwitch?.text(now: state.timerDate)]
+                            .compactMap { $0 }
+                            .joined(separator: ", ")
+                    ))
                 }
             }
             .overlay(alignment: .topTrailing) {

@@ -80,6 +80,8 @@ extension Home {
         var manualTempBasal = false
         /// Nil while Default is the only profile.
         var activeTherapyProfileName: String?
+        /// For showing when the active profile changes next; empty while Default is the only profile.
+        var scheduledProfileSwitches: [ScheduledProfileSwitch] = []
         var isSmoothingEnabled = false
         var maxIOB: Decimal = 0.0
         var currentIOB: Decimal = 0.0
@@ -551,6 +553,7 @@ extension Home {
 
         private func updateActiveTherapyProfileName() {
             activeTherapyProfileName = therapyProfileManager.profiles().count > 1 ? therapyProfileManager.activeProfileName : nil
+            scheduledProfileSwitches = activeTherapyProfileName == nil ? [] : therapyProfileManager.scheduledSwitches()
         }
 
         private func registerObservers() {

@@ -27,7 +27,14 @@ extension TherapyProfiles {
                     ForEach(state.profiles) { profile in
                         NavigationLink(value: Screen.therapyProfileDetail(profile.name)) {
                             HStack {
-                                Text(profile.name)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(profile.name)
+                                    if state.isActive(profile), let next = state.nextProfileSwitch() {
+                                        Text(next.text(now: Date()))
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 if state.isActive(profile) {
                                     Text("Active").foregroundStyle(.secondary)

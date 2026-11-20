@@ -1101,6 +1101,12 @@
     "no recent loop" : {
       "comment" : "Accessibility: IOB hint when Trio has not looped for over a day"
     },
+    "Switches to %@ %@" : {
+      "comment" : "Next scheduled therapy profile switch on another day; first %@ is a profile name, second a weekday and time like \"Sat 07:00\""
+    },
+    "Switches to %@ at %@" : {
+      "comment" : "Next scheduled therapy profile switch today; first %@ is a profile name, second a clock time"
+    },
     " " : {
       "localizations" : {
         "bg" : {
