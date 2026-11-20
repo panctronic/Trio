@@ -970,7 +970,7 @@ private final class LookupStubProtocol: URLProtocol {
 
 private struct AllowingBolusSafetyValidator: BolusSafetyValidator {
     func validate(bolusAmount _: Decimal, overriding _: Set<BolusSafetyCheck>) async throws -> BolusSafetyResult { .allowed }
-    func validateLimits(bolusAmount _: Decimal) -> BolusSafetyResult { .allowed }
+    func validateLimits(bolusAmount _: Decimal, unrecordedUnits _: Decimal) async throws -> BolusSafetyResult { .allowed }
     func fetchTotalRecentBolusAmount(since _: Date) async throws -> Decimal { 0 }
 }
 

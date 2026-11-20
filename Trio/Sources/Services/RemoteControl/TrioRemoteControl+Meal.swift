@@ -37,7 +37,7 @@ extension TrioRemoteControl {
             return
         }
 
-        if let bolusAmount = payload.bolusAmount, let rejection = bolusLimitRejection(bolusAmount: bolusAmount) {
+        if let bolusAmount = payload.bolusAmount, let rejection = try await bolusLimitRejection(bolusAmount: bolusAmount) {
             await logError(rejection, payload: payload)
             return
         }
