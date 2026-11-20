@@ -139,19 +139,33 @@ class CoreDataStack: ObservableObject, @unchecked Sendable {
         return taskContext
     }
 
+    /// Core Data's error when a history token names a store the coordinator does not have ("Unable to find stores
+    /// referenced in History Token"). It has no public constant. The saved token outlives the store it came from
+    /// whenever the two get out of step, for example after a restore, or when unit tests hosted in the app save
+    /// their own stores' tokens to the same `UserDefaults`.
+    static let persistentHistoryTokenForUnknownStoreError = 134_501
+
     func fetchPersistentHistory() async {
         do {
             try await fetchPersistentHistoryTransactionsAndChanges()
         } catch let error as NSError where error.code == NSPersistentHistoryTokenExpiredError {
             warning(.storage, "Persistent history token expired, replaying available history")
-            await recoverFromExpiredHistoryToken()
+            await recoverFromUnusableHistoryToken()
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == Self.persistentHistoryTokenForUnknownStoreError
+        {
+            // Without this every later fetch fails the same way, so no change reaches the view context or the
+            // change publishers again until the token is replaced.
+            warning(.storage, "Persistent history token belongs to another store, replaying available history")
+            await recoverFromUnusableHistoryToken()
         } catch {
             warning(.storage, "Fetching persistent history failed", error: error)
         }
     }
 
-    /// Recovers the change-merge pipeline after the persistent history token expires.
-    private func recoverFromExpiredHistoryToken() async {
+    /// Recovers the change-merge pipeline after the persistent history token expired or turned out to belong to
+    /// another store.
+    private func recoverFromUnusableHistoryToken() async {
         lastToken = nil
         do {
             try await fetchPersistentHistoryTransactionsAndChanges()
