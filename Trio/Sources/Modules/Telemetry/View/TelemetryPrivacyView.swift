@@ -18,7 +18,7 @@ struct TelemetryPrivacyView: View {
                     Text("What is sent")
                         .font(.headline)
                     Text(
-                        "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+                        "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
                     )
                 }
 

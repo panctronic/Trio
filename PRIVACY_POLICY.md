@@ -61,7 +61,7 @@ The following information is included in the telemetry payload:
 
 - App version, build date, branch, and commit SHA
 - Whether the build is a TestFlight or App Store / sideload build
-- An Apple-supplied per-vendor identifier (IDFV) and a per-install UUID
+- A per-install UUID, deleted when you turn usage data sharing off (a later opt-in gets a new one)
 - Device hardware identifier (e.g. "iPhone15,2"), platform, and iOS version
 - The paired pump model (when a pump is configured)
 - The paired CGM type and model (when a CGM is configured)

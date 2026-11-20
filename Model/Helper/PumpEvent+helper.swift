@@ -139,10 +139,21 @@ extension NSPredicate {
         )
     }
 
-    /// Apple Health and Tidepool only take boluses and temp basals from pump history. Other rows
-    /// would never be marked uploaded, and with a per-pass fetch limit they could fill the batch
-    /// and stall the upload, so they are left out here.
+    /// Apple Health only takes boluses and temp basals from pump history. Other rows would never be
+    /// marked uploaded, and with a per-pass fetch limit they could fill the batch and stall the
+    /// upload, so they are left out here.
     private static let insulinDeliveryTypes = [PumpEventStored.EventType.bolus.rawValue, PumpEventStored.EventType.tempBasal.rawValue]
+
+    /// Tidepool also takes suspends, resumes, primes, rewinds, alarms and site changes, as device events
+    /// (`PumpHistoryEvent.mapEventTypeToPumpEventType`).
+    static let tidepoolPumpEventTypes = insulinDeliveryTypes + [
+        PumpEventStored.EventType.pumpSuspend,
+        .pumpResume,
+        .prime,
+        .rewind,
+        .pumpAlarm,
+        .siteChange
+    ].map(\.rawValue)
 
     static var pumpEventsNotYetUploadedToHealth: NSPredicate {
         let date = Date.appleHealthUploadWindowStart
@@ -160,7 +171,7 @@ extension NSPredicate {
             format: "timestamp >= %@ AND isUploadedToTidepool == %@ AND type IN %@ AND \(notScheduledBasal) AND \(notMutable)",
             date as NSDate,
             false as NSNumber,
-            insulinDeliveryTypes
+            tidepoolPumpEventTypes
         )
     }
 

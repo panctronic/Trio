@@ -281,9 +281,28 @@ import Testing
             flags.telemetryInstallId = previousID
         }
         flags.telemetryInstallId = "install-to-forget"
+        let keychain = TrioApp.resolver.resolve(Keychain.self)!
+        let keyIDKey = AppAttestClient.keyIDKey("TelemetryAttest")
+        let registeredKey = AppAttestClient.registeredKey("TelemetryAttest")
+        let previousKeyID = keychain.getValue(String.self, forKey: keyIDKey) as String?
+        let previousRegistered = keychain.getValue(Bool.self, forKey: registeredKey) as Bool?
+        defer {
+            keychain.setValue(previousKeyID, forKey: keyIDKey)
+            keychain.setValue(previousRegistered, forKey: registeredKey)
+        }
+        keychain.setValue("key-to-forget", forKey: keyIDKey)
+        keychain.setValue(true, forKey: registeredKey)
+
         TelemetryClient.recordConsent(false)
         #expect(flags.telemetrySharingEnabled == false)
         #expect(flags.telemetryInstallId == nil)
+        // a later opt-in registers a new App Attest key
+        #expect((keychain.getValue(String.self, forKey: keyIDKey) as String?) == nil)
+        #expect((keychain.getValue(Bool.self, forKey: registeredKey) as Bool?) == nil)
+    }
+
+    @Test("The payload carries no identifier that outlives an opt-out") func payloadHasNoVendorID() {
+        #expect(TelemetryClient.shared.buildPayload()["idfv"] == nil)
     }
 
     @Test("\"Not Now\" puts the prompt away for a week") func consentPromptSnooze() {

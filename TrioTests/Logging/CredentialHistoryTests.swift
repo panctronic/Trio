@@ -84,22 +84,36 @@ import Testing
         #expect(redactor.redact("api-secret header missing; tokens=3") == "api-secret header missing; tokens=3")
     }
 
-    @Test("Churning values of one kind can't evict another kind") func perKindCap() {
+    @Test("Churning tokens can't evict a replaced password") func perKindCap() {
         let nightscout = values(url: "https://old-site.example.test", secret: "old synthetic secret")
-        var history = CredentialHistory.merged([], with: nightscout, now: now.addingTimeInterval(-6 * day))
-        // a day's worth of rotating tokens, newer than the old secret
+        let password = Redactor.ExactValue(value: "old synthetic password", kind: .secret)
+        var history = CredentialHistory.merged([], with: nightscout + [password], now: now.addingTimeInterval(-6 * day))
+        // a day's worth of rotating tokens, newer than the old password and secret
         for index in 0 ..< CredentialHistory.maxEntries {
             history = CredentialHistory.merged(
                 history,
-                with: [Redactor.ExactValue(value: "synthetic-rotating-token-\(index)", kind: .secret)],
+                with: [Redactor.ExactValue(value: "synthetic-rotating-token-\(index)", kind: .token)],
                 now: now.addingTimeInterval(TimeInterval(index))
             )
         }
-        #expect(history.filter { $0.kind == Redactor.Kind.secret.rawValue }.count == CredentialHistory.maxEntriesPerKind)
+        #expect(history.filter { $0.kind == Redactor.Kind.token.rawValue }.count == CredentialHistory.maxEntriesPerKind)
         #expect(history.contains { $0.value == "old synthetic secret" })
+        #expect(history.contains { $0.value == "old synthetic password" })
     }
 
-    @Test("A history that can't be read is not overwritten") func unreadableHistoryIsKept() throws {
+    @Test("Session tokens are recorded as tokens, passwords as secrets") func tokenKinds() {
+        var values = SensitiveValues()
+        values.add(
+            rawState: ["accessToken": "synthetic-access-token", "refreshToken": "synthetic-refresh-token", "pinCode": "123456"],
+            pluginIdentifier: "AccuChek"
+        )
+        let kinds = Dictionary(values.values.map { ($0.value, $0.kind) }, uniquingKeysWith: { first, _ in first })
+        #expect(kinds["synthetic-access-token"] == .token)
+        #expect(kinds["synthetic-refresh-token"] == .token)
+        #expect(kinds["123456"] == .secret)
+    }
+
+    @Test("A history that can't be decoded is replaced by a fresh one") func undecodableHistoryIsReset() throws {
         let keychain = BaseKeychain(serviceName: "CredentialHistoryTests-\(UUID().uuidString)")
         defer { _ = keychain.removeAllKeys() }
         let garbage = Data("not json".utf8)
@@ -107,6 +121,15 @@ import Testing
 
         #expect(CredentialHistory.load(keychain: keychain) == nil)
         CredentialHistory.record(values(url: "https://site.example.test", secret: "synthetic secret"), keychain: keychain, now: now)
-        #expect(try keychain.getData(forKey: CredentialHistory.keychainKey).get() == garbage)
+        let reloaded = try #require(CredentialHistory.load(keychain: keychain))
+        #expect(reloaded.contains { $0.value == "synthetic secret" })
+
+        // and later updates work again
+        CredentialHistory.record(
+            values(url: "https://other.example.test", secret: "another synthetic secret"),
+            keychain: keychain,
+            now: now.addingTimeInterval(day)
+        )
+        #expect(CredentialHistory.load(keychain: keychain)?.contains { $0.value == "another synthetic secret" } == true)
     }
 }

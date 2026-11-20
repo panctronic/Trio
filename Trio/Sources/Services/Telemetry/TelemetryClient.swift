@@ -297,8 +297,10 @@ final class TelemetryClient: Injectable {
         PropertyPersistentFlags.shared.telemetrySharingEnabled = granted
         info(.telemetry, "Usage data sharing \(granted ? "enabled" : "disabled") by the user")
         if !granted {
-            // nothing identifies this install any more; a later opt-in starts with a fresh ID
+            // nothing identifies this install any more; a later opt-in starts with a fresh ID and a fresh
+            // App Attest key, so it can't be linked to this one
             PropertyPersistentFlags.shared.telemetryInstallId = nil
+            TelemetryAttestor.shared.invalidateRegistration()
             return
         }
         guard !wasOptedIn else { return }
@@ -335,9 +337,7 @@ final class TelemetryClient: Injectable {
 
         payload["isTestFlight"] = bd.isTestFlightBuild()
 
-        if let idfv = UIDevice.current.identifierForVendor?.uuidString {
-            payload["idfv"] = idfv
-        }
+        // No identifierForVendor: it survives an opt-out and would link a later opt-in to this one.
         // The preview shows the payload before anyone agreed; the ID only comes into existence on opt-in.
         payload["installId"] = TelemetryConsent.current.allowsSending
             ? installId()

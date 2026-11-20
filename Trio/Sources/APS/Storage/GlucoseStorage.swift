@@ -543,13 +543,12 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToNightscout"
 
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToNightscout,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fetchedResults in
             fetchedResults.map { result in
                 let dateString = result.date ?? Date()
@@ -612,13 +611,12 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToHealth"
 
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToHealth,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fetchedResults in
             fetchedResults.map { result in
                 BloodGlucose(
@@ -642,13 +640,12 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getManualGlucoseNotYetUploadedToHealth"
 
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToHealth,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fetchedResults in
             fetchedResults.map { result in
                 BloodGlucose(
@@ -672,13 +669,12 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToTidepool"
 
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToTidepool,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fetchedResults in
             fetchedResults.map { result in
                 BloodGlucose(
@@ -703,13 +699,12 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getManualGlucoseNotYetUploadedToTidepool"
 
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToTidepool,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fetchedResults in
             fetchedResults.map { result in
                 BloodGlucose(

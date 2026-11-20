@@ -756,13 +756,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     func getCarbsNotYetUploadedToNightscout() async throws -> [NightscoutTreatment] {
         let context = makeContext()
         context.name = "getCarbsNotYetUploadedToNightscout"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToNightscout,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { carbEntries in
             carbEntries.map { result in
                 NightscoutTreatment(
@@ -793,13 +792,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     func getFPUsNotYetUploadedToNightscout() async throws -> [NightscoutTreatment] {
         let context = makeContext()
         context.name = "getFPUsNotYetUploadedToNightscout"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate.fpusNotYetUploadedToNightscout,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { fpuEntries in
             fpuEntries.map { result in
                 NightscoutTreatment(
@@ -830,13 +828,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     func getCarbsNotYetUploadedToHealth() async throws -> [CarbsEntry] {
         let context = makeContext()
         context.name = "getCarbsNotYetUploadedToHealth"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToHealth,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { carbEntries in
             carbEntries.map { result in
                 CarbsEntry(
@@ -858,13 +855,12 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     func getCarbsNotYetUploadedToTidepool() async throws -> [CarbsEntry] {
         let context = makeContext()
         context.name = "getCarbsNotYetUploadedToTidepool"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToTidepool,
             key: "date",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass
+            limit: UploadBacklog.maxRowsPerPass
         ) { carbEntries in
             carbEntries.map { result in
                 CarbsEntry(

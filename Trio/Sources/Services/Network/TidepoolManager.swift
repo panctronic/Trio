@@ -357,14 +357,18 @@ extension BaseTidepoolManager {
 
             let syncCarb: [SyncCarbObject] = Array(chunk).map { $0.convertSyncCarb() }
 
+            let refused = RefusedRecordsBox()
             let result = await TidepoolUploadSerializer.awaitUpload("carbs") {
-                try await tidepoolService.uploadCarbData(created: syncCarb, updated: [], deleted: [])
+                // one malformed entry must not block the rest of the queue
+                refused.value = try await RejectionIsolatingUpload.sendDroppingRejected(
+                    syncCarb, label: "carb entries", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadCarbData(created: $0, updated: [], deleted: []) }
             }
 
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) carb entries to Tidepool")
-                outcome.succeeded()
+                if let given = refused.value { outcome.failed(given) } else { outcome.succeeded() }
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateCarbsAsUploaded(Array(chunk))
             case let .failure(error):
@@ -516,13 +520,21 @@ extension BaseTidepoolManager {
                     return (insulinDoseEvents, pumpEvents)
                 }
 
+            let refusedDoses = RefusedRecordsBox()
             let doseResult = await TidepoolUploadSerializer.awaitUpload("dose") {
-                try await tidepoolService.uploadDoseData(created: insulinDoseEvents, deleted: [])
+                // one malformed entry must not block the rest of the queue
+                refusedDoses.value = try await RejectionIsolatingUpload.sendDroppingRejected(
+                    insulinDoseEvents, label: "dose entries", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadDoseData(created: $0, deleted: []) }
             }
             switch doseResult {
             case .success:
                 info(.tidepool, "Uploaded \(insulinDoseEvents.count) dose entries to Tidepool")
-                if !insulinDoseEvents.isEmpty { outcome.succeeded() }
+                if let given = refusedDoses.value {
+                    outcome.failed(given)
+                } else if !insulinDoseEvents.isEmpty {
+                    outcome.succeeded()
+                }
                 let insulinEvents = events.filter {
                     $0.type == .tempBasal || $0.type == .tempBasalDuration || $0.type == .bolus
                 }
@@ -534,14 +546,22 @@ extension BaseTidepoolManager {
 
             guard await uploadSerializer.isCurrent(generation) else { return }
 
+            let refusedPumpEvents = RefusedRecordsBox()
             let pumpResult = await TidepoolUploadSerializer.awaitUpload("pumpEvents") {
-                try await tidepoolService.uploadPumpEventData(pumpEvents)
+                // one malformed event must not block the rest of the queue
+                refusedPumpEvents.value = try await RejectionIsolatingUpload.sendDroppingRejected(
+                    pumpEvents, label: "pump events", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadPumpEventData($0) }
             }
             switch pumpResult {
             case .success:
                 info(.tidepool, "Uploaded \(pumpEvents.count) pump events to Tidepool")
                 // Usually empty: boluses and temp basals go out as doses above.
-                if !pumpEvents.isEmpty { outcome.succeeded() }
+                if let given = refusedPumpEvents.value {
+                    outcome.failed(given)
+                } else if !pumpEvents.isEmpty {
+                    outcome.succeeded()
+                }
                 let pumpEventsToMark = events.filter { $0.type.mapEventTypeToPumpEventType() != nil }
                 await updateInsulinAsUploaded(pumpEventsToMark)
             case let .failure(error):
@@ -843,14 +863,18 @@ extension BaseTidepoolManager {
         for chunk in glucose.chunks(ofCount: tidepoolService.glucoseDataLimit ?? 100) {
             guard await uploadSerializer.isCurrent(generation) else { return }
 
+            let refused = RefusedRecordsBox()
             let result = await TidepoolUploadSerializer.awaitUpload("glucose") {
-                try await tidepoolService.uploadGlucoseData(chunk)
+                // one malformed value must not block the rest of the queue
+                refused.value = try await RejectionIsolatingUpload.sendDroppingRejected(
+                    chunk, label: "glucose values", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadGlucoseData($0) }
             }
 
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) glucose values to Tidepool")
-                outcome.succeeded()
+                if let given = refused.value { outcome.failed(given) } else { outcome.succeeded() }
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateGlucoseAsUploaded(Array(chunk))
             case let .failure(error):

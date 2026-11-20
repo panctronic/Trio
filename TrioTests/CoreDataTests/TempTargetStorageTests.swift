@@ -145,6 +145,7 @@ import Testing
         #expect(target.duration == 45, "Duration should match")
         #expect(target.targetTop == 120, "Target top should match target")
         #expect(target.targetBottom == 120, "Target bottom should match target")
+        #expect(target.id != nil, "Carries the row id, so the upload can mark the row")
     }
 
     @Test("Get temp target runs not yet uploaded to Nightscout") func testGetTempTargetRunsNotYetUploadedToNightscout() async throws {
@@ -203,6 +204,7 @@ import Testing
         let longRunning = try #require(runs.first { $0.createdAt == longRunningStart })
         #expect(longRunning.duration == 71 * 60, "Duration spans the whole run")
         #expect(longRunning.eventType == .nsTempTarget, "Event type should be NS temp target")
+        #expect(runs.allSatisfy { $0.id != nil }, "Runs carry the row id, so the upload can mark them")
     }
 
     @Test(

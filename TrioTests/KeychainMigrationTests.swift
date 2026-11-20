@@ -130,6 +130,16 @@ private let canWriteSyncedItems: Bool = {
         #expect(value([item("synced", synced: true, modified: newer), item("local", synced: false, modified: newer)]) == "local")
         #expect(value([item("local", synced: false, modified: nil), item("synced", synced: true, modified: nil)]) == "local")
         #expect(value([]) == nil)
+
+        // a synced copy dated in the future (another device's clock runs ahead) doesn't beat the local one
+        let now = Date(timeIntervalSinceReferenceDate: 3000)
+        let future = Date(timeIntervalSinceReferenceDate: 9000)
+        let local = item("local", synced: false, modified: older)
+        let skewed = item("synced", synced: true, modified: future)
+        #expect(
+            (BaseKeychain.preferred([skewed, local], now: now)?[kSecValueData as String] as? Data)
+                .map { String(decoding: $0, as: UTF8.self) } == "local"
+        )
     }
 
     @Test("The remote control secret moves from UserDefaults to the Keychain") func remoteSecret() throws {
