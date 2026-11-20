@@ -371,12 +371,12 @@ import Testing
     }
 
     private func fetchAndSortGlucose() async throws -> [GlucoseStored] {
-        try await coreDataStack.fetchEntitiesAsync(
+        try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: .all,
             key: "date",
             ascending: true
-        ) as? [GlucoseStored] ?? []
+        )
     }
 }

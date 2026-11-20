@@ -539,104 +539,6 @@ extension CoreDataStack {
 // MARK: - Fetch Requests
 
 extension CoreDataStack {
-    // Fetch in background thread
-    /// - Tag: backgroundFetch
-    func fetchEntities<T: NSManagedObject>(
-        ofType type: T.Type,
-        onContext context: NSManagedObjectContext,
-        predicate: NSPredicate,
-        key: String,
-        ascending: Bool,
-        fetchLimit: Int? = nil,
-        batchSize: Int? = nil,
-        propertiesToFetch: [String]? = nil,
-        callingFunction: String = #function,
-        callingClass: String = #fileID
-    ) throws -> [Any] {
-        let request = NSFetchRequest<NSFetchRequestResult>(entityName: String(describing: type))
-        request.sortDescriptors = [NSSortDescriptor(key: key, ascending: ascending)]
-        request.predicate = predicate
-        if let limit = fetchLimit {
-            request.fetchLimit = limit
-        }
-        if let batchSize = batchSize {
-            request.fetchBatchSize = batchSize
-        }
-        if let propertiesToFetch = propertiesToFetch {
-            request.propertiesToFetch = propertiesToFetch
-            request.resultType = .dictionaryResultType
-        } else {
-            request.resultType = .managedObjectResultType
-        }
-
-        /// we need to ensure that the fetch immediately returns a value as long as the whole app does not use the async await pattern, otherwise we could perform this asynchronously with backgroundContext.perform and not block the thread
-        return try context.performAndWait {
-            do {
-                if propertiesToFetch != nil {
-                    return try context.fetch(request) as? [[String: Any]] ?? []
-                } else {
-                    return try context.fetch(request) as? [T] ?? []
-                }
-            } catch {
-                throw CoreDataError.fetchError(
-                    function: callingFunction,
-                    file: callingClass
-                )
-            }
-        }
-    }
-
-    // Fetch Async
-    func fetchEntitiesAsync<T: NSManagedObject>(
-        ofType type: T.Type,
-        onContext context: NSManagedObjectContext,
-        predicate: NSPredicate,
-        key: String,
-        ascending: Bool,
-        fetchLimit: Int? = nil,
-        batchSize: Int? = nil,
-        propertiesToFetch: [String]? = nil,
-        relationshipKeyPathsForPrefetching: [String]? = nil,
-        callingFunction: String = #function,
-        callingClass: String = #fileID
-    ) async throws -> Any {
-        let request: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: String(describing: type))
-        request.sortDescriptors = [NSSortDescriptor(key: key, ascending: ascending)]
-        request.predicate = predicate
-
-        if let limit = fetchLimit {
-            request.fetchLimit = limit
-        }
-        if let batchSize = batchSize {
-            request.fetchBatchSize = batchSize
-        }
-        if let propertiesToFetch = propertiesToFetch {
-            request.propertiesToFetch = propertiesToFetch
-            request.resultType = .dictionaryResultType
-        } else {
-            request.resultType = .managedObjectResultType
-        }
-        if let prefetchKeyPaths = relationshipKeyPathsForPrefetching {
-            request.relationshipKeyPathsForPrefetching = prefetchKeyPaths
-        }
-
-        return try await context.perform {
-            do {
-                if propertiesToFetch != nil {
-                    return try context.fetch(request) as? [[String: Any]] ?? []
-                } else {
-                    return try context.fetch(request) as? [T] ?? []
-                }
-            } catch let error as NSError {
-                throw CoreDataError.unexpectedError(
-                    error: error,
-                    function: callingFunction,
-                    file: callingClass
-                )
-            }
-        }
-    }
-
     // Get NSManagedObject
     func getNSManagedObject<T: NSManagedObject>(
         with ids: [NSManagedObjectID],
@@ -671,8 +573,8 @@ extension CoreDataStack {
 /// managed objects handed to `body` never leave the context's queue. Return value types or
 /// `NSManagedObjectID`s from `body` and refetch on the destination context if objects are needed elsewhere.
 ///
-/// The parameters mean the same as they always have for `fetchEntitiesAsync`: one sort descriptor on `key`,
-/// optional fetch limit (`0` or `nil` means no limit), batch size and relationship prefetching.
+/// All variants build the same request: one sort descriptor on `key`, an optional fetch limit (`0` or `nil`
+/// means no limit), batch size and relationship prefetching.
 extension CoreDataStack {
     /// Fetches `type` on `context` and hands the results to `body` on the context's queue.
     ///

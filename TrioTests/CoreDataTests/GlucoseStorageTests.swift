@@ -50,13 +50,13 @@ import Testing
         try await storage.storeGlucose(testGlucose)
 
         // Then verify stored entries
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 126"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(storedEntries?.isEmpty == false, "Should have stored entries")
         #expect(storedEntries?.count == 1, "Should have exactly one entry")
@@ -72,13 +72,13 @@ import Testing
         try await storage.storeGlucose(testGlucose)
 
         // Get the stored entry's ObjectID
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 140"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         guard let objectID = storedEntries?.first?.objectID else {
             throw TestError("Failed to get stored entry's ObjectID")
@@ -90,24 +90,24 @@ import Testing
         await storage.deleteGlucose(objectID)
 
         // Then verify deletion
-        let remainingEntries = try await coreDataStack.fetchEntitiesAsync(
+        let remainingEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 140"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(remainingEntries?.isEmpty == true, "Should have no entries after deletion")
 
         // Finally verify that it stored a copy
-        let archivedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let archivedEntries = try await coreDataStack.fetchObjects(
             ofType: DeletedGlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 140"),
             key: "date",
             ascending: false
-        ) as? [DeletedGlucoseStored]
+        ) as [DeletedGlucoseStored]?
 
         #expect(archivedEntries?.isEmpty == false, "Should have archived entries after deletion")
     }
@@ -159,23 +159,23 @@ import Testing
         try await storage.storeGlucose(testGlucose)
 
         // Then the stored row should be clamped to 39, not 23
-        let clampedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let clampedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 39"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(clampedEntries?.count == 1, "Sub-39 glucose should be clamped and stored as 39")
 
-        let rawEntries = try await coreDataStack.fetchEntitiesAsync(
+        let rawEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 23"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(rawEntries?.isEmpty == true, "Raw sub-39 value must not be persisted")
     }
@@ -191,13 +191,13 @@ import Testing
         try await storage.backfillGlucose(testGlucose)
 
         // Then the backfilled row should be clamped to 39
-        let clampedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let clampedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 39"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(clampedEntries?.count == 1, "Sub-39 backfilled glucose should be clamped and stored as 39")
     }
@@ -232,13 +232,13 @@ import Testing
         ])
 
         // Then the backfilled CGM reading is stored
-        let backfilled = try await coreDataStack.fetchEntitiesAsync(
+        let backfilled = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 147 AND isManual == NO"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         #expect(backfilled?.count == 1, "Backfilled CGM reading near a manual entry should be stored")
     }
@@ -271,13 +271,13 @@ import Testing
 
         // When - Test low glucose
         try await storage.storeGlucose(lowGlucose)
-        var storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        var storedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 55"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         // Then
         #expect(storedEntries?.first?.glucose == 55, "Low glucose value should match")
@@ -285,13 +285,13 @@ import Testing
 
         // When - Test high glucose
         try await storage.storeGlucose(highGlucose)
-        storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        storedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 271"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         // Then
         #expect(storedEntries?.first?.glucose == 271, "High glucose value should match")
@@ -299,13 +299,13 @@ import Testing
 
         // When - Test normal glucose
         try await storage.storeGlucose(normalGlucose)
-        storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        storedEntries = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "glucose == 100"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored]
+        ) as [GlucoseStored]?
 
         // Then
         #expect(storedEntries?.first?.glucose == 100, "Normal glucose value should match")

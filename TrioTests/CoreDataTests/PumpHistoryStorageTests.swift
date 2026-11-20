@@ -79,7 +79,7 @@ import Testing
         try await storage.storePumpEvents(events, replacePendingEvents: false)
 
         // When - Fetch events with our generic fetch function
-        let fetchedEvents = try await coreDataStack.fetchEntitiesAsync(
+        let fetchedEvents = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: testContext,
             predicate: NSPredicate(
@@ -90,8 +90,6 @@ import Testing
             key: "timestamp",
             ascending: false
         )
-
-        guard let fetchedEvents = fetchedEvents as? [PumpEventStored] else { return }
 
         // Then
         #expect(fetchedEvents.count == 1, "Should have found exactly one event")
@@ -109,7 +107,7 @@ import Testing
         }
 
         // Then - Verify deletion
-        let eventsAfterDeletion = try await coreDataStack.fetchEntitiesAsync(
+        let eventsAfterDeletion = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: testContext,
             predicate: NSPredicate(
@@ -120,8 +118,6 @@ import Testing
             key: "timestamp",
             ascending: false
         )
-
-        guard let eventsAfterDeletion = eventsAfterDeletion as? [PumpEventStored] else { return }
 
         #expect(eventsAfterDeletion.isEmpty, "Should have no events after deletion")
     }
@@ -261,7 +257,7 @@ import Testing
         try await storage.storePumpEvents(events, replacePendingEvents: false)
 
         // When - Fetch events with our generic fetch function
-        let fetchedEvents = try await coreDataStack.fetchEntitiesAsync(
+        let fetchedEvents = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: testContext,
             predicate: NSPredicate(
@@ -272,8 +268,6 @@ import Testing
             key: "timestamp",
             ascending: false
         )
-
-        guard let fetchedEvents = fetchedEvents as? [PumpEventStored] else { return }
 
         // Then
         #expect(fetchedEvents.count == 1, "Should have found exactly one event")

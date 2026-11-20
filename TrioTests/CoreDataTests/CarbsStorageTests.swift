@@ -56,17 +56,13 @@ import Testing
 
         // When
         try await storage.storeCarbs(testEntries, areFetchedFromRemote: false)
-        let recentEntries = try await coreDataStack.fetchEntitiesAsync(
+        let recentEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: false
         )
-
-        guard let recentEntries = recentEntries as? [CarbEntryStored] else {
-            throw TestError("Failed to get recent entries")
-        }
 
         // Then
         #expect(!recentEntries.isEmpty, "Should have stored entries")
@@ -96,13 +92,13 @@ import Testing
         try await storage.storeCarbs([testEntry], areFetchedFromRemote: false)
 
         // Get the stored entry's ObjectID
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "carbs == 30"),
             key: "date",
             ascending: false
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         guard let objectID = storedEntries?.first?.objectID else {
             throw TestError("Failed to get stored entry's ObjectID")
@@ -112,13 +108,13 @@ import Testing
         await storage.deleteCarbsEntryStored(objectID)
 
         // Then - verify deletion
-        let remainingEntries = try await coreDataStack.fetchEntitiesAsync(
+        let remainingEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "carbs == 30"),
             key: "date",
             ascending: false
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         #expect(remainingEntries?.isEmpty == true, "Should have no entries after deletion")
     }
@@ -153,13 +149,13 @@ import Testing
 
         try await storage.storeCarbs([mealEntry], areFetchedFromRemote: false)
 
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "fpuID == %@", fpuID),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         guard let storedEntries else {
             throw TestError("Failed to fetch entries for fpuID")
@@ -238,13 +234,13 @@ import Testing
 
         try await storage.storeCarbs([heftyMealEntry], areFetchedFromRemote: false)
 
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "fpuID == %@", fpuID),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         guard let storedEntries else {
             throw TestError("Failed to fetch entries for fpuID")
@@ -328,13 +324,13 @@ import Testing
 
         try await storage.storeCarbs([smallMealEntry], areFetchedFromRemote: false)
 
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "fpuID == %@", fpuID),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         guard let storedEntries else {
             throw TestError("Failed to fetch entries for fpuID")
@@ -401,13 +397,13 @@ import Testing
         try await storage.storeCarbs([testEntry], areFetchedFromRemote: false)
 
         // First verify all stored entries
-        let allStoredEntries = try await coreDataStack.fetchEntitiesAsync(
+        let allStoredEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "fpuID == %@", fpuID),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         // Then verify the stored entries
         #expect(allStoredEntries?.isEmpty == false, "Should have stored entries")
@@ -457,13 +453,13 @@ import Testing
 
         try await storage.storeCarbs([mealEntry], areFetchedFromRemote: true)
 
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
 
         #expect(storedEntries?.count == 1)
         #expect(storedEntries?.first?.id != nil, "Entry has a UUID id")
@@ -541,13 +537,13 @@ import Testing
     // MARK: - replaceCarbs
 
     private func allStoredRows() async throws -> [CarbEntryStored] {
-        guard let rows = try await coreDataStack.fetchEntitiesAsync(
+        guard let rows = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored] else {
+        ) as [CarbEntryStored]? else {
             throw TestError("Failed to fetch stored rows")
         }
         return rows
