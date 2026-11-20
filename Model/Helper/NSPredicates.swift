@@ -77,13 +77,43 @@ extension Date {
 /// newest first, then the backlog oldest first (`CoreDataStack.fetchUploadBatchAndMap`). Marking a batch as uploaded changes the result of the upload controllers'
 /// fetch, which requests the next pass, so a backlog drains in bounded steps.
 enum UploadBacklog {
-    /// Nightscout accepts back-dated entries and treatments; a week covers a long outage.
-    static let nightscoutDays = 7
-    /// Apple Health is written locally; a month covers long stretches without permission or
+    static let defaultNightscoutDays = 7
+    static let defaultAppleHealthDays = 30
+    static let defaultTidepoolDays = 30
+    static let minDays = 1
+    static let maxDays = 90
+
+    static let nightscoutDaysKey = "UploadBacklog.nightscoutDays"
+    static let appleHealthDaysKey = "UploadBacklog.appleHealthDays"
+    static let tidepoolDaysKey = "UploadBacklog.tidepoolDays"
+
+    /// Nightscout accepts back-dated entries and treatments; default 7 days covers a long outage.
+    static var nightscoutDays: Int {
+        get { storedDays(forKey: nightscoutDaysKey, defaultValue: defaultNightscoutDays) }
+        set { UserDefaults.standard.set(clampedDays(newValue), forKey: nightscoutDaysKey) }
+    }
+
+    /// Apple Health is written locally; default 30 days covers long stretches without permission or
     /// with the device locked.
-    static let appleHealthDays = 30
-    /// A Tidepool login can stay expired for weeks before anyone notices.
-    static let tidepoolDays = 30
+    static var appleHealthDays: Int {
+        get { storedDays(forKey: appleHealthDaysKey, defaultValue: defaultAppleHealthDays) }
+        set { UserDefaults.standard.set(clampedDays(newValue), forKey: appleHealthDaysKey) }
+    }
+
+    /// A Tidepool login can stay expired for weeks before anyone notices; default 30 days.
+    static var tidepoolDays: Int {
+        get { storedDays(forKey: tidepoolDaysKey, defaultValue: defaultTidepoolDays) }
+        set { UserDefaults.standard.set(clampedDays(newValue), forKey: tidepoolDaysKey) }
+    }
+
+    private static func storedDays(forKey key: String, defaultValue: Int) -> Int {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
+        return clampedDays(UserDefaults.standard.integer(forKey: key))
+    }
+
+    private static func clampedDays(_ value: Int) -> Int {
+        min(max(value, minDays), maxDays)
+    }
 
     static let maxRowsPerPass = 1000
     static let maxPumpEventsPerPass = 500

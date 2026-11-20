@@ -7,6 +7,10 @@ extension SyncStatus {
 
         @State var state = StateModel()
 
+        @AppStorage(UploadBacklog.nightscoutDaysKey) private var nightscoutRetryDays = UploadBacklog.defaultNightscoutDays
+        @AppStorage(UploadBacklog.tidepoolDaysKey) private var tidepoolRetryDays = UploadBacklog.defaultTidepoolDays
+        @AppStorage(UploadBacklog.appleHealthDaysKey) private var appleHealthRetryDays = UploadBacklog.defaultAppleHealthDays
+
         @Environment(\.colorScheme) var colorScheme
         @Environment(AppState.self) var appState
 
@@ -42,13 +46,29 @@ extension SyncStatus {
                 }
 
                 Section {
-                    Text(
-                        "Records that could not be uploaded are retried for \(UploadBacklog.nightscoutDays) days (Nightscout) or \(UploadBacklog.tidepoolDays) days (Tidepool and Apple Health). Older records are not uploaded."
+                    Stepper(
+                        "Nightscout: \(nightscoutRetryDays) d",
+                        value: $nightscoutRetryDays,
+                        in: UploadBacklog.minDays ... UploadBacklog.maxDays
                     )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Stepper(
+                        "Tidepool: \(tidepoolRetryDays) d",
+                        value: $tidepoolRetryDays,
+                        in: UploadBacklog.minDays ... UploadBacklog.maxDays
+                    )
+                    Stepper(
+                        "Apple Health: \(appleHealthRetryDays) d",
+                        value: $appleHealthRetryDays,
+                        in: UploadBacklog.minDays ... UploadBacklog.maxDays
+                    )
+                } header: {
+                    Text("Upload Retry Windows")
+                } footer: {
+                    Text(
+                        "Records that could not be uploaded are retried for \(nightscoutRetryDays) days (Nightscout), \(tidepoolRetryDays) days (Tidepool), and \(appleHealthRetryDays) days (Apple Health). Older records are not uploaded."
+                    )
                 }
-                .listRowBackground(Color.clear)
+                .listRowBackground(Color.chart)
             }
             .listSectionSpacing(sectionSpacing)
             .scrollContentBackground(.hidden)
