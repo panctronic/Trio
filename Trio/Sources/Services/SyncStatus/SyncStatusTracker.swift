@@ -178,6 +178,27 @@ struct SyncStatusSnapshot: JSON, Equatable, Sendable {
         get { destinations[destination] ?? SyncDestinationRecord() }
         set { destinations[destination] = newValue }
     }
+
+    /// Combines this record (read late from the file) with `newer` (recorded in memory meanwhile):
+    /// the later upload time wins, the later failure wins, and a failure older than the kind's
+    /// last upload is dropped.
+    func merged(with newer: SyncStatusSnapshot) -> SyncStatusSnapshot {
+        var result = self
+        for (destination, record) in newer.destinations {
+            var merged = result[destination]
+            for (kind, date) in record.lastSuccess {
+                merged.lastSuccess[kind] = max(merged.lastSuccess[kind] ?? date, date)
+            }
+            for (kind, failure) in record.failures where (merged.failures[kind]?.date ?? .distantPast) <= failure.date {
+                merged.failures[kind] = failure
+            }
+            for (kind, failure) in merged.failures where (merged.lastSuccess[kind] ?? .distantPast) >= failure.date {
+                merged.failures[kind] = nil
+            }
+            result[destination] = merged
+        }
+        return result
+    }
 }
 
 /// Records the outcome of every upload to Nightscout, Tidepool and Apple Health, so the Sync Status
@@ -191,8 +212,8 @@ struct SyncStatusSnapshot: JSON, Equatable, Sendable {
 /// right away; a change that only moves a "last upload" time is written at most once a minute, so
 /// a relaunch may show a last upload up to a minute older than it was.
 ///
-/// `@unchecked Sendable`: the mutable state sits in `state`'s lock; `storage` is used only on
-/// `writeQueue`.
+/// `@unchecked Sendable`: the mutable state sits in `state`'s lock; `storage` and `fileExists` are
+/// used only in `init` and on `writeQueue`.
 final class SyncStatusTracker: @unchecked Sendable {
     static let didChange = Notification.Name("SyncStatusTracker.didChange")
     static let file = "upload/sync-status.json"
@@ -207,19 +228,62 @@ final class SyncStatusTracker: @unchecked Sendable {
         var lastWrite: Date?
         /// When the next write is due, if one is scheduled.
         var writeDue: Date?
+        /// The file exists but could not be read (protected data before the first unlock). Nothing
+        /// is written until it has been read, so the first write doesn't replace it.
+        var fileUnreadable = false
+    }
+
+    private enum StoredRecord {
+        case loaded(SyncStatusSnapshot)
+        /// No file, or a file that reads but doesn't decode (it is replaced).
+        case missing
+        case unreadable
     }
 
     private let storage: FileStorage?
     private let now: @Sendable() -> Date
     private let state: OSAllocatedUnfairLock<State>
     private let writeQueue = DispatchQueue(label: "SyncStatusTracker.write", qos: .utility)
+    private let fileExists: (String) -> Bool
+    /// How long to wait before trying an unreadable file again.
+    static let unreadableRetryInterval: TimeInterval = 60
 
-    /// - Parameter storage: where the record is persisted; `nil` keeps it in memory only.
-    init(storage: FileStorage?, now: @escaping @Sendable() -> Date = { Date() }) {
+    /// - Parameters:
+    ///   - storage: where the record is persisted; `nil` keeps it in memory only.
+    ///   - fileExists: whether a file is present even if it can't be read; defaults to checking
+    ///     the storage's URL on disk.
+    init(
+        storage: FileStorage?,
+        now: @escaping @Sendable() -> Date = { Date() },
+        fileExists: ((String) -> Bool)? = nil
+    ) {
         self.storage = storage
         self.now = now
-        let stored = storage?.retrieve(Self.file, as: SyncStatusSnapshot.self) ?? SyncStatusSnapshot()
-        state = OSAllocatedUnfairLock(initialState: State(snapshot: stored))
+        self.fileExists = fileExists ?? { name in
+            if let url = storage?.urlFor(file: name) {
+                return FileManager.default.fileExists(atPath: url.path)
+            }
+            return storage?.retrieveRaw(name) != nil
+        }
+        var initial = State(snapshot: SyncStatusSnapshot())
+        switch Self.read(storage, fileExists: self.fileExists) {
+        case let .loaded(snapshot): initial.snapshot = snapshot
+        case .missing: break
+        case .unreadable:
+            initial.fileUnreadable = true
+            warning(.storage, "Sync status file can't be read yet; keeping it until it can")
+        }
+        state = OSAllocatedUnfairLock(initialState: initial)
+    }
+
+    private static func read(_ storage: FileStorage?, fileExists: (String) -> Bool) -> StoredRecord {
+        guard let storage else { return .missing }
+        if let snapshot = storage.retrieve(file, as: SyncStatusSnapshot.self) {
+            return .loaded(snapshot)
+        }
+        guard fileExists(file) else { return .missing }
+        // Present but undecodable is replaced; present but unreadable is kept.
+        return storage.retrieveRaw(file) == nil ? .unreadable : .missing
     }
 
     var snapshot: SyncStatusSnapshot {
@@ -296,6 +360,12 @@ final class SyncStatusTracker: @unchecked Sendable {
     /// Runs on `writeQueue`. Copies the latest snapshot under the lock and writes it outside.
     private func write(force: Bool) {
         guard let storage else { return }
+        guard loadFileIfStillUnreadable() else {
+            writeQueue.asyncAfter(deadline: .now() + Self.unreadableRetryInterval) { [weak self] in
+                self?.write(force: false)
+            }
+            return
+        }
         let current = now()
         enum Step { case idle, wait(TimeInterval), save(SyncStatusSnapshot) }
         let step: Step = state.withLock { state in
@@ -320,5 +390,21 @@ final class SyncStatusTracker: @unchecked Sendable {
         case let .save(snapshot):
             storage.save(snapshot, as: Self.file)
         }
+    }
+
+    /// Runs on `writeQueue`. If the file couldn't be read at launch, reads it now and merges what
+    /// was recorded since. Returns `false` while it still can't be read.
+    private func loadFileIfStillUnreadable() -> Bool {
+        guard state.withLock({ $0.fileUnreadable }) else { return true }
+        let stored = Self.read(storage, fileExists: fileExists)
+        if case .unreadable = stored { return false }
+        state.withLock { state in
+            if case let .loaded(snapshot) = stored {
+                state.snapshot = snapshot.merged(with: state.snapshot)
+            }
+            state.fileUnreadable = false
+        }
+        Foundation.NotificationCenter.default.post(name: Self.didChange, object: self)
+        return true
     }
 }

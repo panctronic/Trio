@@ -14,6 +14,34 @@ private final class SyncTestClock: Sendable {
     func advance(_ interval: TimeInterval) { current.withLock { $0 += interval } }
 }
 
+/// File storage that can't read or write while "locked", like protected data before the first unlock.
+private final class LockableFileStorage: FileStorage, @unchecked Sendable {
+    let backing = InMemoryFileStorage()
+    private let lockedState = OSAllocatedUnfairLock(initialState: false)
+    var locked: Bool {
+        get { lockedState.withLock { $0 } }
+        set { lockedState.withLock { $0 = newValue } }
+    }
+
+    func save<Value: JSON>(_ value: Value, as name: String) { if !locked { backing.save(value, as: name) } }
+    func saveAsync<Value: JSON>(_ value: Value, as name: String) async { save(value, as: name) }
+    func retrieve<Value: JSON>(_ name: String, as type: Value.Type) -> Value? {
+        locked ? nil : backing.retrieve(name, as: type)
+    }
+
+    func retrieveAsync<Value: JSON>(_ name: String, as type: Value.Type) async -> Value? { retrieve(name, as: type) }
+    func retrieveRaw(_ name: String) -> RawJSON? { locked ? nil : backing.retrieveRaw(name) }
+    func retrieveRawAsync(_ name: String) async -> RawJSON? { retrieveRaw(name) }
+    func append<Value: JSON>(_: Value, to _: String) {}
+    func append<Value: JSON>(_: [Value], to _: String) {}
+    func append<Value: JSON, T: Equatable>(_: Value, to _: String, uniqBy _: KeyPath<Value, T>) {}
+    func append<Value: JSON, T: Equatable>(_: [Value], to _: String, uniqBy _: KeyPath<Value, T>) {}
+    func remove(_ name: String) { backing.remove(name) }
+    func rename(_ name: String, to newName: String) { backing.rename(name, to: newName) }
+    func transaction(_ exec: (FileStorage) -> Void) { exec(self) }
+    func urlFor(file _: String) -> URL? { nil }
+}
+
 @Suite("Sync status tracker") struct SyncStatusTrackerTests {
     @Test("A success records its time and clears the failure of the same kind only") func successClearsSameKind() {
         let clock = SyncTestClock()
@@ -106,6 +134,46 @@ private final class SyncTestClock: Sendable {
 
         tracker.flush()
         #expect(stored() == tracker.snapshot)
+    }
+
+    @Test("A file that can't be read yet is kept, then merged once it can") func unreadableFileIsKept() throws {
+        let storage = LockableFileStorage()
+        let clock = SyncTestClock()
+        var onDisk = SyncStatusSnapshot()
+        onDisk[.tidepool].lastSuccess[.glucose] = clock.now.addingTimeInterval(-3600)
+        onDisk[.nightscout]
+            .failures[.carbs] = SyncFailure(kind: .carbs, message: "HTTP 500", date: clock.now.addingTimeInterval(-60))
+        storage.backing.save(onDisk, as: SyncStatusTracker.file)
+        storage.locked = true
+
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now }, fileExists: { _ in true })
+        #expect(tracker.snapshot == SyncStatusSnapshot())
+
+        // Recorded while locked: kept in memory, the file is not replaced.
+        tracker.recordSuccess(.nightscout, .carbs)
+        storage.locked = false
+        let untouched = try #require(storage.backing.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self))
+        #expect(untouched == onDisk)
+
+        // Once readable, the next write merges both.
+        tracker.flush()
+        let merged = tracker.snapshot
+        #expect(merged[.tidepool].lastSuccess[.glucose] == onDisk[.tidepool].lastSuccess[.glucose])
+        #expect(merged[.nightscout].lastSuccess[.carbs] == clock.now)
+        #expect(merged[.nightscout].failures[.carbs] == nil) // cleared by the later success
+        #expect(storage.backing.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self) == merged)
+    }
+
+    @Test("A missing or undecodable file starts empty and is replaced") func missingOrCorrupt() {
+        let storage = InMemoryFileStorage()
+        #expect(SyncStatusTracker(storage: storage).snapshot == SyncStatusSnapshot())
+
+        storage.save("not json" as RawJSON, as: SyncStatusTracker.file)
+        let tracker = SyncStatusTracker(storage: storage)
+        #expect(tracker.snapshot == SyncStatusSnapshot())
+        tracker.recordFailure(.nightscout, .glucose, message: "offline")
+        tracker.waitForPendingWrites()
+        #expect(storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self)?[.nightscout].failures[.glucose] != nil)
     }
 
     @Test("Changes are announced") func postsChange() {
