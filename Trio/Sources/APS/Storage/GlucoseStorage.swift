@@ -430,14 +430,14 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
 
     func fetchLatestGlucose(context: NSManagedObjectContext) throws -> GlucoseStored? {
         let predicate = NSPredicate.predicateFor20MinAgo
-        return (try CoreDataStack.shared.fetchEntities(
+        return try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: predicate,
             key: "date",
             ascending: false,
             fetchLimit: 1
-        ) as? [GlucoseStored] ?? []).first
+        ).first
     }
 
     /// Fetches recent glucose and converts it into the `BloodGlucose` values the oref algorithm consumes.
@@ -449,20 +449,14 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         let cutoff = Date().addingTimeInterval(-(Double(truncating: fetchHours as NSNumber) * 3600))
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate(format: "date >= %@", cutoff as NSDate),
             key: "date",
             ascending: false,
             batchSize: 48
-        )
-
-        return try await context.perform {
-            guard let glucoseResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
+        ) { glucoseResults in
             // extracting handler to only create it 1x
             let roundingBehavior = NSDecimalNumberHandler(
                 roundingMode: .plain,
@@ -541,21 +535,15 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToNightscout"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToNightscout,
             key: "date",
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map { result in
+        ) { fetchedResults in
+            fetchedResults.map { result in
                 let dateString = result.date ?? Date()
                 let dateMilliseconds = Decimal(dateString.timeIntervalSince1970 * 1000).rounded()
                 if result.isManual {
@@ -616,21 +604,15 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToHealth"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToHealth,
             key: "date",
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map { result in
+        ) { fetchedResults in
+            fetchedResults.map { result in
                 BloodGlucose(
                     id: result.id?.uuidString ?? UUID().uuidString,
                     sgv: Int(result.glucose),
@@ -652,21 +634,15 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getManualGlucoseNotYetUploadedToHealth"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToHealth,
             key: "date",
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map { result in
+        ) { fetchedResults in
+            fetchedResults.map { result in
                 BloodGlucose(
                     id: result.id?.uuidString ?? UUID().uuidString,
                     sgv: Int(result.glucose),
@@ -688,21 +664,15 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getGlucoseNotYetUploadedToTidepool"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToTidepool,
             key: "date",
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map { result in
+        ) { fetchedResults in
+            fetchedResults.map { result in
                 BloodGlucose(
                     id: result.id?.uuidString ?? UUID().uuidString,
                     sgv: Int(result.glucose),
@@ -725,21 +695,15 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         let context = makeContext()
         context.name = "getManualGlucoseNotYetUploadedToTidepool"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToTidepool,
             key: "date",
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map { result in
+        ) { fetchedResults in
+            fetchedResults.map { result in
                 BloodGlucose(
                     id: result.id?.uuidString ?? UUID().uuidString,
                     sgv: Int(result.glucose),
