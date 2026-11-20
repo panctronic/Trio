@@ -39,8 +39,12 @@ final class BolusIntentRequest: BaseIntentsRequest {
         } else {
             bolusQuantity = apsManager.roundBolus(amount: Decimal(bolusAmount))
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: bolusQuantity, timestamp: Date())
-            // perform determine basal sync
-            try await apsManager.determineBasalSync()
+            // The insulin is recorded either way; a failed refresh must not read as a failed entry
+            do {
+                try await apsManager.determineBasalSync()
+            } catch {
+                warning(.treatments, "Determination after external insulin from Shortcuts failed", error: error)
+            }
 
             return String(
                 localized:
