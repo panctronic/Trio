@@ -265,6 +265,13 @@ final class LogExport: Injectable {
 
     private func sensitiveValues(in window: DateInterval) async throws -> [Redactor.ExactValue] {
         var values = await currentSensitiveValues()
+        // Keychain work off the main actor: remember what is in use now, then add replaced credentials that may
+        // still be in the retained logs
+        if let keychain {
+            let current = await currentCredentials().values
+            CredentialHistory.record(current, keychain: keychain)
+            values.add(exact: CredentialHistory.recentValues(keychain: keychain))
+        }
         // Devices replaced during the window are only known from the device log
         if let deviceLogStore {
             for slice in LogFileWriter.slices(of: window) {
@@ -296,18 +303,16 @@ final class LogExport: Injectable {
     /// are replaced. Called whenever the app becomes active and on every export.
     @MainActor func rememberCurrentCredentials() {
         guard let keychain else { return }
-        CredentialHistory.record(currentCredentials().values, keychain: keychain)
+        let current = currentCredentials().values
+        // reading, decoding and writing the history stays off the main actor
+        Task.detached(priority: .utility) {
+            CredentialHistory.record(current, keychain: keychain)
+        }
     }
 
     @MainActor private func currentSensitiveValues() -> SensitiveValues {
         var values = storedValues
-        let credentials = currentCredentials()
-        values.add(exact: credentials.values)
-        if let keychain {
-            CredentialHistory.record(credentials.values, keychain: keychain)
-            // replaced credentials that may still be in the retained logs
-            values.add(exact: CredentialHistory.recentValues(keychain: keychain))
-        }
+        values.add(exact: currentCredentials().values)
         let (pump, cgm) = currentManagers()
         for manager in [pump, cgm].compactMap({ $0 }) {
             values.add(manager)

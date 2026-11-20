@@ -49,9 +49,13 @@ import Testing
         // unchanged within the refresh interval, so nothing is rewritten
         #expect(CredentialHistory.merged(seenAgain, with: secret, now: now.addingTimeInterval(60)) == seenAgain)
 
-        let many = (0 ..< CredentialHistory.maxEntries + 50).map {
-            Redactor.ExactValue(value: "synthetic-token-\($0)", kind: .secret)
+        let kinds: [Redactor.Kind] = [.secret, .account, .email, .apiSecret, .nightscoutURL, .remoteSecret, .pushToken]
+        let many = kinds.flatMap { kind in
+            (0 ..< CredentialHistory.maxEntriesPerKind).map {
+                Redactor.ExactValue(value: "synthetic-\(kind.rawValue)-\($0)", kind: kind)
+            }
         }
+        #expect(many.count > CredentialHistory.maxEntries)
         #expect(CredentialHistory.merged([], with: many, now: now).count == CredentialHistory.maxEntries)
     }
 
@@ -78,5 +82,31 @@ import Testing
         }
         // ordinary text is left alone
         #expect(redactor.redact("api-secret header missing; tokens=3") == "api-secret header missing; tokens=3")
+    }
+
+    @Test("Churning values of one kind can't evict another kind") func perKindCap() {
+        let nightscout = values(url: "https://old-site.example.test", secret: "old synthetic secret")
+        var history = CredentialHistory.merged([], with: nightscout, now: now.addingTimeInterval(-6 * day))
+        // a day's worth of rotating tokens, newer than the old secret
+        for index in 0 ..< CredentialHistory.maxEntries {
+            history = CredentialHistory.merged(
+                history,
+                with: [Redactor.ExactValue(value: "synthetic-rotating-token-\(index)", kind: .secret)],
+                now: now.addingTimeInterval(TimeInterval(index))
+            )
+        }
+        #expect(history.filter { $0.kind == Redactor.Kind.secret.rawValue }.count == CredentialHistory.maxEntriesPerKind)
+        #expect(history.contains { $0.value == "old synthetic secret" })
+    }
+
+    @Test("A history that can't be read is not overwritten") func unreadableHistoryIsKept() throws {
+        let keychain = BaseKeychain(serviceName: "CredentialHistoryTests-\(UUID().uuidString)")
+        defer { _ = keychain.removeAllKeys() }
+        let garbage = Data("not json".utf8)
+        try (keychain.setData(garbage, forKey: CredentialHistory.keychainKey) as Result<Void, KeychainError>).get()
+
+        #expect(CredentialHistory.load(keychain: keychain) == nil)
+        CredentialHistory.record(values(url: "https://site.example.test", secret: "synthetic secret"), keychain: keychain, now: now)
+        #expect(try keychain.getData(forKey: CredentialHistory.keychainKey).get() == garbage)
     }
 }
