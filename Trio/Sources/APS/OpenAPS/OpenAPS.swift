@@ -797,8 +797,13 @@ extension OpenAPS {
         )
     }
 
-    func fetchActiveOverrides(on context: NSManagedObjectContext) throws -> [OverrideStored] {
-        try CoreDataStack.shared.fetchObjectsAndWait(
+    /// The override the algorithm applies: the newest enabled one, unless its duration has run out.
+    ///
+    /// An override that ran out stays enabled in the store until something ends it, so the check
+    /// against `date + duration` happens here. Without it a timed override kept applying for as
+    /// long as nothing ended it (`AdjustmentManager.endExpiredOverrides`).
+    func fetchActiveOverrides(on context: NSManagedObjectContext, now: Date = Date()) throws -> [OverrideStored] {
+        let latest = try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: OverrideStored.self,
             onContext: context,
             predicate: NSPredicate.lastActiveOverride,
@@ -806,6 +811,7 @@ extension OpenAPS {
             ascending: false,
             fetchLimit: 1
         )
+        return latest.filter { !$0.hasExpired(at: now) }
     }
 
     func fetchHistoricalTDDData(from date: Date, on context: NSManagedObjectContext) throws -> [[String: Any]] {

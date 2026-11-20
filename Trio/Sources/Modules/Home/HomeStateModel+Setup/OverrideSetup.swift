@@ -66,6 +66,16 @@ extension Home.StateModel {
         }
     }
 
+    /// Ends the overrides whose duration has run out, through the same path the loop uses, so the
+    /// run entry records the real expiry time rather than the moment the Home screen noticed it.
+    func endExpiredOverrides() async {
+        do {
+            try await adjustmentManager.endExpiredOverrides()
+        } catch {
+            warning(.treatments, "Ending expired overrides failed", error: error)
+        }
+    }
+
     /// We can safely pass the NSManagedObject  as we are doing everything on the Main Actor
     @MainActor func saveToOverrideRunStored(object: OverrideStored) async {
         let newOverrideRunStored = OverrideRunStored(context: viewContext)
