@@ -34,6 +34,13 @@ struct CurrentGlucoseView: View {
 
     @Environment(\.colorScheme) var colorScheme
 
+    /// Glucose number: 40 pt at the default text size, scaled with Dynamic Type.
+    @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 40
+
+    /// Widest the text inside the 130 pt bobble may get before it shrinks to fit, so a large text
+    /// size or a wide value ("HIGH", "22.2") never spills over the ring.
+    private static let bobbleTextMaxWidth: CGFloat = 112
+
     var body: some View {
         let triangleColor = Color(red: 0.262745098, green: 0.7333333333, blue: 0.9137254902)
 
@@ -219,15 +226,22 @@ struct CurrentGlucoseView: View {
         HStack {
             if let glucoseValue = glucose.last?.glucose, isReadingFresh {
                 let displayGlucose = Decimal(glucoseValue).formatted(for: units)
-                Text(glucoseValue == 400 ? "HIGH" : displayGlucose)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                Text(
+                    glucoseValue == 400
+                        ? String(localized: "HIGH", comment: "Shown instead of the glucose value at the top of the sensor range")
+                        : displayGlucose
+                )
+                    .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .foregroundStyle(glucoseColor(for: glucoseValue))
             } else {
                 Text("– –")
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
             }
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .frame(maxWidth: Self.bobbleTextMaxWidth)
         if let date = glucose.last?.date, isReadingFresh {
             HStack {
                 Group {
@@ -237,6 +251,9 @@ struct CurrentGlucoseView: View {
                 .font(.callout).fontWeight(.bold)
                 .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.9) : Color.secondary)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: Self.bobbleTextMaxWidth)
             .frame(alignment: .top)
         }
     }
@@ -319,10 +336,12 @@ struct CurrentGlucoseView: View {
                     "hourglass"
                 )
             }
-            return ("Warming up", "Warming up", .orange, "hourglass")
+            let warmingUp = String(localized: "Warming up", comment: "CGM sensor status tag on the glucose bobble")
+            return (warmingUp, warmingUp, .orange, "hourglass")
         }
         if isStabilizing {
-            return ("Stabilizing", "Stabilizing", .orange, "hourglass")
+            let stabilizing = String(localized: "Stabilizing", comment: "CGM sensor status tag on the glucose bobble")
+            return (stabilizing, stabilizing, .orange, "hourglass")
         }
         if let status = cgmStatus {
             // Only the normal tier is gated to the arc's 48h window; a warning

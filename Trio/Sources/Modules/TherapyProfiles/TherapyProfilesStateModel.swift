@@ -146,6 +146,11 @@ extension TherapyProfiles {
             return next.entry
         }
 
+        /// The next scheduled start that changes the active profile, for display.
+        func nextProfileSwitch(now: Date = Date()) -> NextTherapyProfileSwitch? {
+            NextTherapyProfileSwitch.find(in: scheduledSwitches, activeProfileName: activeProfileName, after: now)
+        }
+
         func nextStart(now: Date = Date()) -> ScheduledProfileSwitch? {
             scheduledSwitches.nextOccurrence(after: now, calendar: .current)?.entry
         }

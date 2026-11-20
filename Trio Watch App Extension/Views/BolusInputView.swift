@@ -22,6 +22,33 @@ struct BolusInputView: View {
         endPoint: .bottom
     )
 
+    private func decrementBolus() {
+        if bolusAmount > 0 { bolusAmount -= Double(truncating: state.bolusIncrement as NSNumber) }
+    }
+
+    private func incrementBolus() {
+        bolusAmount = min(
+            effectiveBolusLimit,
+            bolusAmount + Double(truncating: state.bolusIncrement as NSNumber)
+        )
+    }
+
+    /// The step of the +/- buttons, spoken: "0.05 units"
+    private var incrementSpoken: String {
+        Self.spokenUnits(Double(truncating: state.bolusIncrement as NSNumber))
+    }
+
+    /// "1.25 units", plus a warning once the bolus limit is reached
+    private func bolusSpokenValue(_ adjustedBolusAmount: Double) -> String {
+        let amount = Self.spokenUnits(adjustedBolusAmount)
+        guard bolusAmount > 0.0, bolusAmount >= effectiveBolusLimit else { return amount }
+        return amount + ", " + String(localized: "Bolus Limit Reached!")
+    }
+
+    static func spokenUnits(_ amount: Double) -> String {
+        String(format: "%.2f", amount) + " " + String(localized: "units", comment: "Accessibility: spoken unit")
+    }
+
     var body: some View {
         let bolusIncrement = Double(truncating: state.bolusIncrement as NSNumber)
         let adjustedBolusAmount = floor(bolusAmount / bolusIncrement) * bolusIncrement
@@ -62,15 +89,18 @@ struct BolusInputView: View {
 
                     HStack {
                         // "-" Button
-                        Button(action: {
-                            if bolusAmount > 0 { bolusAmount -= Double(truncating: state.bolusIncrement as NSNumber) }
-                        }) {
+                        Button(action: decrementBolus) {
                             Image(systemName: "minus.circle.fill")
                                 .font(.title3)
                                 .tint(Color.insulin)
                         }
                         .buttonStyle(.borderless)
                         .disabled(bolusAmount <= 0)
+                        .accessibilityLabel(Text("Decrease bolus"))
+                        .accessibilityHint(Text(String(
+                            localized: "Subtracts \(incrementSpoken)",
+                            comment: "Accessibility hint for the watch bolus minus button; %@ is an amount like \"0.05 units\""
+                        )))
 
                         Spacer()
 
@@ -89,28 +119,41 @@ struct BolusInputView: View {
                                 isContinuous: false,
                                 isHapticFeedbackEnabled: true
                             )
+                            // VoiceOver takes over the crown, so the amount itself is adjustable with swipes
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Text("Bolus amount"))
+                            .accessibilityValue(Text(bolusSpokenValue(adjustedBolusAmount)))
+                            .accessibilityAdjustableAction { direction in
+                                switch direction {
+                                case .increment: incrementBolus()
+                                case .decrement: decrementBolus()
+                                @unknown default: break
+                                }
+                            }
 
                         Spacer()
 
                         // "+" Button
-                        Button(action: {
-                            bolusAmount = min(
-                                effectiveBolusLimit,
-                                bolusAmount + Double(truncating: state.bolusIncrement as NSNumber)
-                            )
-                        }) {
+                        Button(action: incrementBolus) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.title3)
                                 .tint(Color.insulin)
                         }
                         .buttonStyle(.borderless)
                         .disabled(bolusAmount >= effectiveBolusLimit)
+                        .accessibilityLabel(Text("Increase bolus"))
+                        .accessibilityHint(Text(String(
+                            localized: "Adds \(incrementSpoken)",
+                            comment: "Accessibility hint for the watch bolus plus button; %@ is an amount like \"0.05 units\""
+                        )))
                     }.padding(.horizontal)
 
                     Text("Insulin")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .padding(.bottom)
+                        // already spoken as the label of the amount above
+                        .accessibilityHidden(true)
 
                     Spacer()
 

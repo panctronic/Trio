@@ -41,6 +41,10 @@ struct TherapyProfileDetailView: View {
                     if state.isActive(profile) {
                         Label("Active", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(Color.green)
+                        if let next = state.nextProfileSwitch() {
+                            Label(next.text(now: Date()), systemImage: "calendar.badge.clock")
+                                .foregroundStyle(.secondary)
+                        }
                     } else {
                         Label("Not active", systemImage: "circle")
                             .foregroundStyle(.secondary)

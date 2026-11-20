@@ -43,7 +43,7 @@ extension Home.RootView {
 
     @ViewBuilder func adjustmentIcon(_ systemName: String, tint: Color) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(tint)
             .frame(width: 30, height: 30)
             .background(Circle().fill(tint.opacity(0.18)))
@@ -471,7 +471,7 @@ extension Home.RootView {
 
             HStack {
                 Image(systemName: "cross.vial.fill")
-                    .font(.system(size: 25))
+                    .font(.system(size: bolusPanelSymbolSize))
                     .accessibilityHidden(true)
 
                 Spacer()
@@ -496,7 +496,7 @@ extension Home.RootView {
                         state.cancelBolus()
                     } label: {
                         Image(systemName: "xmark.app")
-                            .font(.system(size: 25))
+                            .font(.system(size: bolusPanelSymbolSize))
                     }
                     .accessibilityLabel(Text("Cancel bolus"))
                 } else if state.bolusStatus == .initiating {
@@ -627,7 +627,7 @@ extension Home.RootView {
                     Spacer(minLength: 8)
 
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 16)
@@ -682,7 +682,7 @@ extension Home.RootView {
                     Spacer(minLength: 8)
 
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 16)

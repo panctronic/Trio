@@ -60,6 +60,11 @@ struct TrioMainWatchView: View {
         isAdjustmentActive(for: state.overridePresets) { $0.isEnabled }
     }
 
+    /// Spoken for "--": no current value
+    private var noDataSpoken: String {
+        String(localized: "no data", comment: "Accessibility: watch value that is not available or outdated")
+    }
+
     private var trioBackgroundColor = LinearGradient(
         gradient: Gradient(colors: [Color.bgDarkBlue, Color.bgDarkerDarkBlue]),
         startPoint: .top,
@@ -130,6 +135,9 @@ struct TrioMainWatchView: View {
                             .frame(alignment: .leading)
                             .minimumScaleFactor(0.5)
                     }.font(.caption2)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text("Insulin on board"))
+                        .accessibilityValue(Text(isWatchStateDated || isSessionUnreachable ? noDataSpoken : state.iob ?? noDataSpoken))
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -142,6 +150,9 @@ struct TrioMainWatchView: View {
                             .frame(alignment: .trailing)
                             .minimumScaleFactor(0.5)
                     }.font(.caption2)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text("Carbs on board"))
+                        .accessibilityValue(Text(isWatchStateDated || isSessionUnreachable ? noDataSpoken : state.cob ?? noDataSpoken))
                 }
 
                 ToolbarItemGroup(placement: .bottomBar) {
@@ -153,6 +164,8 @@ struct TrioMainWatchView: View {
                     }
                     .tint(isOverrideActive ? Color.purple : nil)
                     .disabled(isWatchStateDated || isSessionUnreachable)
+                    .accessibilityLabel(Text("Override Presets"))
+                    .accessibilityValue(Text(isOverrideActive ? String(localized: "active", comment: "Accessibility: an override or temp target is running") : ""))
 
                     Button {
                         showingTreatmentMenuSheet = true
@@ -163,6 +176,7 @@ struct TrioMainWatchView: View {
                     .controlSize(.large)
                     .buttonStyle(WatchOSButtonStyle(deviceType: state.deviceType))
                     .disabled(isWatchStateDated || isSessionUnreachable)
+                    .accessibilityLabel(Text("Add Treatment"))
 
                     Button {
                         showingTempTargetSheet = true
@@ -172,6 +186,8 @@ struct TrioMainWatchView: View {
                     }
                     .tint(isTempTargetActive ? Color.loopGreen.opacity(0.75) : nil)
                     .disabled(isWatchStateDated || isSessionUnreachable)
+                    .accessibilityLabel(Text("Temp Target Presets"))
+                    .accessibilityValue(Text(isTempTargetActive ? String(localized: "active", comment: "Accessibility: an override or temp target is running") : ""))
                 }
             }
             .fullScreenCover(isPresented: $showingTreatmentMenuSheet) {
