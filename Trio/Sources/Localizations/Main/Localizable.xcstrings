@@ -65313,6 +65313,9 @@
         }
       }
     },
+    "Bolus blocked: the safety checks could not be completed." : {
+      "comment" : "Error message sent to watch when the bolus safety checks fail to run"
+    },
     "Bolus Calculator" : {
       "localizations" : {
         "bg" : {
@@ -278894,6 +278897,9 @@
         }
       }
     },
+    "snoozed, %@ remaining" : {
+      "comment" : "Accessibility: alarm snooze; %@ is a duration like \"15 minutes\". Word it so %@ stays unchanged."
+    },
     "snoozed, %d minutes remaining" : {
       "comment" : "Accessibility: alarm snooze",
       "localizations" : {
@@ -314312,6 +314318,9 @@
           }
         }
       }
+    },
+    "To bolus anyway, dial crown." : {
+
     },
     "To calculate the maximum SMB allowed based on this setting, use the following formula:" : {
       "localizations" : {

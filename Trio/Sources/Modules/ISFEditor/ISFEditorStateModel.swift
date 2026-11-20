@@ -131,7 +131,9 @@ extension ISFEditor {
                 do {
                     self.liveBase = try await therapyProfileManager.saveLiveSettings(
                         expectedActiveName: liveBase.name,
-                        expectedFingerprint: liveBase.fingerprint(units: .mgdL)
+                        expectedFingerprint: liveBase.fingerprint(units: .mgdL),
+                        writesBasalSchedule: false,
+                        proposed: liveBase.replacing(insulinSensitivities: profile)
                     ) { provider.saveProfile(profile) }
                 } catch {
                     profileSaveError = error.localizedDescription

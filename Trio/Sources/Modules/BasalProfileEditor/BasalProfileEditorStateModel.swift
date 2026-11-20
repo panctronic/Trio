@@ -162,7 +162,8 @@ extension BasalProfileEditor {
                     self.liveBase = try await therapyProfileManager.saveLiveSettings(
                         expectedActiveName: liveBase.name,
                         expectedFingerprint: liveBase.fingerprint(units: .mgdL),
-                        writesBasalSchedule: true
+                        writesBasalSchedule: true,
+                        proposed: liveBase.replacing(basalProfile: profile)
                     ) {
                         for try await _ in provider.saveProfile(profile).values {}
                     }

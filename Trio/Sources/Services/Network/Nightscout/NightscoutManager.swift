@@ -8,7 +8,8 @@ import UIKit
 
 protocol NightscoutManager: GlucoseSource {
     func fetchGlucose(since date: Date) async -> [BloodGlucose]
-    func fetchCarbs() async -> [CarbsEntry]
+    /// Carb entries from Nightscout and the site URL they were fetched from.
+    func fetchCarbs() async -> (entries: [CarbsEntry], siteURL: String?)
     func fetchTempTargets() async -> [TempTarget]
     /// Returns false when Nightscout rejected the delete; unconfigured or upload-disabled Nightscout counts as success.
     func deleteCarbs(withID id: String) async -> Bool
@@ -96,13 +97,18 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private var nightscoutAPI: NightscoutAPI? {
+        nightscoutSite?.api
+    }
+
+    /// The API for the configured site and the URL string it was built from.
+    private var nightscoutSite: (api: NightscoutAPI, url: String)? {
         guard let urlString = keychain.getValue(String.self, forKey: NightscoutConfig.Config.urlKey),
               let url = URL(string: urlString),
               let secret = keychain.getValue(String.self, forKey: NightscoutConfig.Config.secretKey)
         else {
             return nil
         }
-        return NightscoutAPI(url: url, secret: secret)
+        return (NightscoutAPI(url: url, secret: secret), urlString)
     }
 
     private var lastEnactedDetermination: Determination?
@@ -280,6 +286,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             category: .nightscout
         )
 
+        NightscoutObjectIdStore.shared.snapshot()
+
         uploadSerializer = NightscoutUploadSerializer { [weak self] pipeline in
             await self?.performUpload(for: pipeline)
         }
@@ -418,18 +426,18 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         fetch(nil)
     }
 
-    func fetchCarbs() async -> [CarbsEntry] {
-        guard let nightscout = nightscoutAPI, isNetworkReachable, isDownloadEnabled else {
-            return []
+    func fetchCarbs() async -> (entries: [CarbsEntry], siteURL: String?) {
+        guard let site = nightscoutSite, isNetworkReachable, isDownloadEnabled else {
+            return ([], nil)
         }
 
         let since = carbsStorage.syncDate()
         do {
-            let carbs = try await nightscout.fetchCarbs(sinceDate: since)
-            return carbs
+            let carbs = try await site.api.fetchCarbs(sinceDate: since)
+            return (carbs, site.url)
         } catch {
             warning(.nightscout, "Carbs fetch failed", error: error)
-            return []
+            return ([], nil)
         }
     }
 
@@ -1045,19 +1053,35 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func uploadPumpHistory(_ treatments: [NightscoutTreatment]) async {
-        guard !treatments.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
+        guard !treatments.isEmpty, let site = nightscoutSite, isUploadEnabled else {
             return
         }
 
         do {
             for chunk in treatments.chunks(ofCount: 100) {
-                try await nightscout.uploadTreatments(Array(chunk))
+                let response = try await site.api.uploadTreatments(Array(chunk))
+                let bolusIds = Set(chunk.filter { $0.insulin != nil }.compactMap(\.id))
+                NightscoutObjectIdStore.shared.record(
+                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: bolusIds),
+                    fromSite: site.url
+                )
+                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                // without its _id lookup having run, even if a later chunk fails.
+                await resolveMissingObjectIds(localIds: Array(bolusIds), site: site)
                 await updatePumpEventStoredsAsUploaded(Array(chunk))
             }
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
         } catch {
             warning(.nightscout, "Upload of \(treatments.count) pump events failed", error: error)
+        }
+    }
+
+    /// Looks up on `site` the `_id`s an upload response did not return, by the uploaded local ids.
+    private func resolveMissingObjectIds(localIds: [String], site: (api: NightscoutAPI, url: String)) async {
+        let createdSince = Date().addingTimeInterval(-NightscoutObjectIdCache.retention)
+        await NightscoutObjectIdStore.shared.resolveMissing(localIds: localIds, fromSite: site.url) { localId in
+            try await site.api.fetchObjectId(forLocalId: localId, createdSince: createdSince)
         }
     }
 
@@ -1110,13 +1134,21 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func uploadCarbs(_ treatments: [NightscoutTreatment]) async {
-        guard !treatments.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
+        guard !treatments.isEmpty, let site = nightscoutSite, isUploadEnabled else {
             return
         }
 
         do {
             for chunk in treatments.chunks(ofCount: 100) {
-                try await nightscout.uploadTreatments(Array(chunk))
+                let response = try await site.api.uploadTreatments(Array(chunk))
+                let localIds = Set(chunk.compactMap(\.id))
+                NightscoutObjectIdStore.shared.record(
+                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: localIds),
+                    fromSite: site.url
+                )
+                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                // without its _id lookup having run, even if a later chunk fails.
+                await resolveMissingObjectIds(localIds: Array(localIds), site: site)
                 await updateCarbsAsUploaded(Array(chunk))
             }
 

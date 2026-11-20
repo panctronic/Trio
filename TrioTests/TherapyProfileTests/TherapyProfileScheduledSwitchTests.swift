@@ -103,6 +103,50 @@ import Testing
         #expect(context.recorder.pumpWrites == 0)
     }
 
+    @Test("A switch run by the loop leaves the determination to the loop") func dueSwitchInLoop() async throws {
+        let context = try await makeContext()
+        context.recorder.now = date("2026-11-14 07:02")
+        await context.manager.runDueScheduledSwitch(inLoop: true)
+
+        #expect(context.manager.activeProfileName == "Weekend")
+        #expect(!context.recorder.events.contains(.recompute))
+    }
+
+    @Test("Editing the list keeps a due start that is still retrying") func editKeepsPendingStart() async throws {
+        let context = try await makeContext()
+        context.recorder.pumpError = PumpFailure()
+        context.recorder.now = date("2026-11-14 07:01")
+        await context.manager.runDueScheduledSwitch()
+        #expect(context.manager.activeProfileName == "Default")
+
+        // An unrelated edit (pausing the Monday start) while the Saturday start is still pending.
+        context.recorder.now = date("2026-11-14 07:10")
+        let edited = context.manager.scheduledSwitches().map { entry in
+            var entry = entry
+            if entry.id == "s" { entry.paused = true }
+            return entry
+        }
+        try await context.manager.saveScheduledSwitches(edited, baseFingerprint: nil)
+        #expect(try await settledAt(context) == date("2026-11-13 12:00"))
+
+        context.recorder.pumpError = nil
+        context.recorder.now = date("2026-11-14 07:15")
+        await context.manager.runDueScheduledSwitch()
+        #expect(context.manager.activeProfileName == "Weekend")
+    }
+
+    @Test("A start added for a time already past does not run") func addedPastStartDoesNotRun() async throws {
+        let context = try await makeContext()
+        context.recorder.now = date("2026-11-13 18:00")
+        try await context.manager.saveScheduledSwitches(
+            context.manager.scheduledSwitches() + [ScheduledProfileSwitch(profileName: "Weekend", weekday: 6, time: 46800)],
+            baseFingerprint: nil
+        )
+        #expect(try await settledAt(context) == date("2026-11-13 18:00"))
+        await context.manager.runDueScheduledSwitch()
+        #expect(context.manager.activeProfileName == "Default")
+    }
+
     @Test("A start whose profile is already active settles without a switch") func alreadyActive() async throws {
         let context = try await makeContext()
         try await context.manager.activate("Weekend", expectedFingerprint: nil)

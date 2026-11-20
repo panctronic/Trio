@@ -146,4 +146,86 @@ final class SpyAlertManager: TrioAlertManager {
             #expect(alert.trigger != .immediate)
         }
     }
+
+    @Test("Loops while suspended arm nothing; resuming the pump re-arms the ladder") func resumeReArms() {
+        let loops = PassthroughSubject<Date, Never>()
+        let suspension = PassthroughSubject<Bool, Never>()
+        let spy = SpyAlertManager()
+        let monitor = NotLoopingMonitor(
+            loopDates: loops.eraseToAnyPublisher(),
+            trioAlertManager: spy,
+            suspension: suspension.eraseToAnyPublisher()
+        )
+
+        suspension.send(true)
+        loops.send(Date())
+        #expect(spy.issuedAlerts.isEmpty)
+
+        suspension.send(false)
+        #expect(spy.issuedAlerts.count == 6)
+        if let critical = spy.issuedAlerts.first(where: { $0.identifier == criticalID }) {
+            expectDelay(critical.trigger, 120)
+        } else {
+            Issue.record("expected the critical step after resume")
+        }
+        _ = monitor
+    }
+
+    @Test(
+        "A loop history that went stale while suspended still arms the full ladder on resume"
+    )  func resumeAfterStaleLoopArmsFromResume() {
+        let loops = PassthroughSubject<Date, Never>()
+        let suspension = PassthroughSubject<Bool, Never>()
+        let spy = SpyAlertManager()
+        let monitor = NotLoopingMonitor(
+            loopDates: loops.eraseToAnyPublisher(),
+            trioAlertManager: spy,
+            suspension: suspension.eraseToAnyPublisher()
+        )
+
+        suspension.send(true)
+        loops.send(Date().addingTimeInterval(-3 * 60 * 60))
+        suspension.send(false)
+
+        #expect(spy.issuedAlerts.count == 6)
+        let first = spy.issuedAlerts.first { $0.identifier == warningID(1) }
+        if let first { expectDelay(first.trigger, 20) } else { Issue.record("expected the first warning") }
+        _ = monitor
+    }
+
+    @Test("Repeated not-suspended reports re-arm only once") func repeatedStatusDoesNotReArm() {
+        let loops = PassthroughSubject<Date, Never>()
+        let suspension = PassthroughSubject<Bool, Never>()
+        let spy = SpyAlertManager()
+        let monitor = NotLoopingMonitor(
+            loopDates: loops.eraseToAnyPublisher(),
+            trioAlertManager: spy,
+            suspension: suspension.eraseToAnyPublisher()
+        )
+
+        suspension.send(true)
+        suspension.send(false)
+        suspension.send(false)
+        suspension.send(false)
+        #expect(spy.issuedAlerts.count == 6)
+        _ = monitor
+    }
+
+    @Test("The end of a manual temp basal re-arms the ladder") func manualTempEndReArms() {
+        let loops = PassthroughSubject<Date, Never>()
+        let manualTemp = PassthroughSubject<Bool, Never>()
+        let spy = SpyAlertManager()
+        let monitor = NotLoopingMonitor(
+            loopDates: loops.eraseToAnyPublisher(),
+            trioAlertManager: spy,
+            manualTempBasal: manualTemp.eraseToAnyPublisher()
+        )
+
+        manualTemp.send(true)
+        loops.send(Date())
+        #expect(spy.issuedAlerts.isEmpty)
+        manualTemp.send(false)
+        #expect(spy.issuedAlerts.count == 6)
+        _ = monitor
+    }
 }

@@ -13,7 +13,8 @@ protocol APSManager {
     /// usual dwell threshold — when the user explicitly asks for a loop,
     /// they want feedback even if the underlying error is "transient".
     func markNextLoopUserInitiated()
-    func enactBolus(amount: Double, isSMB: Bool, callback: ((Bool, String) -> Void)?) async
+    /// Reports whether the bolus was enacted, failed, or may have been delivered.
+    func enactBolus(amount: Double, isSMB: Bool, completion: ((BolusEnactmentResult) -> Void)?) async
     var pumpManager: PumpManagerUI? { get set }
     var bluetoothManager: BluetoothStateManager? { get }
     var pumpDisplayState: CurrentValueSubject<PumpDisplayState?, Never> { get }
@@ -28,8 +29,8 @@ protocol APSManager {
     var isSuspended: Bool { get }
     /// Runs a determination outside the loop, after a treatment or adjustment changed what the
     /// algorithm reads. Waits for a loop in flight to finish first, since that loop determined
-    /// before the change landed. Concurrent calls collapse into the one already running. Algorithm
-    /// errors propagate to the caller.
+    /// before the change landed, and likewise for a standalone determination already running.
+    /// Throws if it could not run (algorithm error, or the earlier run did not finish in time).
     func determineBasalSync() async throws
     func simulateDetermineBasal(
         simulatedCarbsAmount: Decimal,
@@ -40,6 +41,48 @@ protocol APSManager {
     var lastError: CurrentValueSubject<Error?, Never> { get }
     func cancelBolus(_ callback: ((Bool, String) -> Void)?) async
     var iobFileDidUpdate: PassthroughSubject<Void, Never> { get }
+}
+
+extension APSManager {
+    /// `enactBolus(amount:isSMB:completion:)`, reporting success and the message.
+    func enactBolus(amount: Double, isSMB: Bool, callback: ((Bool, String) -> Void)?) async {
+        await enactBolus(amount: amount, isSMB: isSMB) { (result: BolusEnactmentResult) in
+            callback?(result.isSuccess, result.message)
+        }
+    }
+}
+
+enum BolusEnactmentResult {
+    case enacted(message: String)
+    /// Nothing was delivered. `error` is the pump's error when the pump refused the bolus.
+    case failed(message: String, error: Error?)
+    /// The command was sent to the pump without a confirmation; the bolus may have been delivered.
+    case uncertainDelivery(message: String, error: Error)
+
+    var isSuccess: Bool {
+        if case .enacted = self { return true }
+        return false
+    }
+
+    var message: String {
+        switch self {
+        case let .enacted(message),
+             let .failed(message, _),
+             let .uncertainDelivery(message, _):
+            return message
+        }
+    }
+
+    /// The result of a bolus that threw `error`.
+    static func failure(message: String, error: Error) -> BolusEnactmentResult {
+        if case PumpManagerError.uncertainDelivery = error {
+            return .uncertainDelivery(message: message, error: error)
+        }
+        if case let APSError.pumpError(pumpError) = error, case PumpManagerError.uncertainDelivery = pumpError {
+            return .uncertainDelivery(message: message, error: error)
+        }
+        return .failed(message: message, error: error)
+    }
 }
 
 /// Notified after a bolus-related failure so observing UI (e.g. the
@@ -75,10 +118,11 @@ enum APSError: LocalizedError {
 // MARK: - Thread-safe loop serialization
 
 /// Ensures only one loop runs at a time via actor isolation
-private actor LoopGuard {
+actor LoopGuard {
     private var isRunning = false
     private var isDeterminingStandalone = false
     private var loopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var standaloneWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     /// Atomically checks whether a new loop can start and marks it as running if so.
     func tryStart(minInterval: TimeInterval, lastLoopDate: Date, lastLoopStartDate: Date) -> Bool {
@@ -104,17 +148,39 @@ private actor LoopGuard {
         await withCheckedContinuation { loopWaiters.append($0) }
     }
 
-    /// Claims the guard for a determination that runs outside the loop. Refuses while another one
-    /// runs, since it computes the same state. `tryStart` ignores this claim: a skipped loop has a
-    /// therapy cost, an overlapping determination only wastes work.
-    func tryStartStandaloneDetermination() -> Bool {
-        guard !isDeterminingStandalone else { return false }
+    /// Claims the guard for a determination that runs outside the loop. If another one is running it
+    /// waits for that to finish first: the running one may have read its inputs before the caller's
+    /// change landed, so the caller still needs a run of its own. Returns false if the claim could not
+    /// be made within `timeout`. `tryStart` ignores this claim: a skipped loop has a therapy cost, an
+    /// overlapping determination only wastes work.
+    func claimStandaloneDetermination(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while isDeterminingStandalone {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { return false }
+            let waiterID = UUID()
+            let woken = await withCheckedContinuation { continuation in
+                standaloneWaiters[waiterID] = continuation
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    await self?.timeOutStandaloneWaiter(waiterID)
+                }
+            }
+            guard woken else { return false }
+        }
         isDeterminingStandalone = true
         return true
     }
 
+    private func timeOutStandaloneWaiter(_ waiterID: UUID) {
+        standaloneWaiters.removeValue(forKey: waiterID)?.resume(returning: false)
+    }
+
     func finishStandaloneDetermination() {
         isDeterminingStandalone = false
+        let waiters = standaloneWaiters
+        standaloneWaiters.removeAll()
+        waiters.values.forEach { $0.resume(returning: true) }
     }
 }
 
@@ -306,9 +372,6 @@ final class BaseAPSManager: APSManager, Injectable {
                 return
             }
 
-            // Before the loop starts, so the loop doses with the new profile.
-            await self.therapyProfileManager?.runDueScheduledSwitch()
-
             // Atomic check-and-set via actor — eliminates the race between
             // checking isLooping.value and sending isLooping(true).
             guard await loopGuard.tryStart(
@@ -340,6 +403,10 @@ final class BaseAPSManager: APSManager, Injectable {
             isLooping.send(true)
             info(.loop, "Loop started, mode \(settings.dosingMode.rawValue)\(userInitiated ? ", requested by user" : "")")
 
+            // Inside the loop guard and background task, before determining: the switch can't interleave with a
+            // running loop, and this loop doses with the new profile.
+            await self.therapyProfileManager?.runDueScheduledSwitch(inLoop: true)
+
             let loopStartDate = Date()
             lastLoopStartDate = loopStartDate
             let interval = await calculateLoopInterval(loopStartDate: loopStartDate)
@@ -350,19 +417,20 @@ final class BaseAPSManager: APSManager, Injectable {
                 interval: interval
             )
 
+            var determinationID: NSManagedObjectID?
             do {
-                let enacted = try await executeLoop(loopStatRecord: &loopStatRecord)
+                let enacted = try await executeLoop(loopStatRecord: &loopStatRecord, determinationID: &determinationID)
                 requestNightscoutUpload(
                     [.carbs, .pumpHistory, .overrides, .tempTargets, .profiles],
                     source: "APSManager"
                 )
-                await finalizeLoop(enacted: enacted, loopStatRecord: loopStatRecord)
+                await finalizeLoop(enacted: enacted, determinationID: determinationID, loopStatRecord: loopStatRecord)
             } catch {
                 let endDate = Date()
                 loopStatRecord.end = endDate
                 loopStatRecord.duration = roundDouble((endDate - loopStatRecord.start).timeInterval / 60, 2)
                 loopStatRecord.loopStatus = error.localizedDescription
-                await finalizeLoop(error: error, loopStatRecord: loopStatRecord)
+                await finalizeLoop(error: error, determinationID: determinationID, loopStatRecord: loopStatRecord)
             }
 
             // End the background task
@@ -373,14 +441,19 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
-    /// Returns whether the determination was enacted.
-    private func executeLoop(loopStatRecord: inout LoopStats) async throws -> Bool {
-        try await determineBasal()
+    /// Returns whether the determination was enacted. `determinationID` is set to the record this
+    /// cycle stored, as soon as it is stored, so the caller can report its enacted state on failure too.
+    private func executeLoop(
+        loopStatRecord: inout LoopStats,
+        determinationID: inout NSManagedObjectID?
+    ) async throws -> Bool {
+        let storedID = try await determineBasal()
+        determinationID = storedID
 
         // Closed loop: also enact the determination.
         var enacted = false
         if settings.dosingMode.automation != .off {
-            enacted = try await enactDetermination()
+            enacted = try await enactDetermination(determinationID: storedID)
         }
 
         let endDate = Date()
@@ -417,7 +490,12 @@ final class BaseAPSManager: APSManager, Injectable {
     }
 
     /// Single exit point for loop — replaces the old `loopCompleted()`.
-    private func finalizeLoop(error: Error? = nil, enacted: Bool = false, loopStatRecord: LoopStats) async {
+    private func finalizeLoop(
+        error: Error? = nil,
+        enacted: Bool = false,
+        determinationID: NSManagedObjectID?,
+        loopStatRecord: LoopStats
+    ) async {
         await loopGuard.finish()
         isLooping.send(false)
 
@@ -428,14 +506,18 @@ final class BaseAPSManager: APSManager, Injectable {
             info(.loop, "Loop finished in \(String(format: "%.1f", Date().timeIntervalSince(loopStatRecord.start))) s")
             lastLoopDate = Date()
             lastError.send(nil)
-            transientCategoryFirstSeen.removeAll()
-            transientCategoryCount.removeAll()
+            transientCategoryLock.withLock {
+                transientCategoryFirstSeen.removeAll()
+                transientCategoryCount.removeAll()
+            }
         }
 
         loopStats(loopStatRecord: loopStatRecord)
 
-        if settings.dosingMode.automation != .off {
-            await reportEnacted(wasEnacted: error == nil && enacted)
+        // Only the record this cycle stored. Without one (the run failed before storing) there is nothing
+        // to report: falling back to the latest record would overwrite a previous cycle's enacted state.
+        if settings.dosingMode.automation != .off, let determinationID {
+            await reportEnacted(determinationID: determinationID, wasEnacted: error == nil && enacted)
         }
     }
 
@@ -486,8 +568,15 @@ final class BaseAPSManager: APSManager, Injectable {
         await tddStorage.storeTDD(tddResult)
     }
 
-    private func determineBasal() async throws {
-        try await calculateAndStoreTDD()
+    /// Returns the object ID of the stored determination this run produced.
+    @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
+        // TDD only feeds Dynamic ISF, which falls back to the stored history (and is turned off for the run when there
+        // is not enough of it), so a failed calculation must not stop the loop from dosing.
+        do {
+            try await calculateAndStoreTDD()
+        } catch {
+            warning(.loop, "Calculating the total daily dose failed, determining without updating it", error: error)
+        }
 
         var invalidGlucoseError: String?
 
@@ -539,7 +628,7 @@ final class BaseAPSManager: APSManager, Injectable {
             let currentTemp = try await fetchCurrentTempBasal(date: now)
             _ = try await autosense()
 
-            let determination = try await openAPS.determineBasal(
+            let (determination, storedID) = try await openAPS.determineBasalAndStore(
                 for: settingsManager.settings.dosingMode,
                 currentTemp: currentTemp,
                 supportedBasalRates: supportedBasalRates,
@@ -552,19 +641,22 @@ final class BaseAPSManager: APSManager, Injectable {
                 throw APSError.glucoseError(message: "Glucose validation failed")
             }
 
-            if let determination = determination {
-                info(
-                    .loop,
-                    "Determination: eventual BG \(determination.eventualBG.map { "\($0) mg/dL" } ?? "none"), temp basal \(determination.rate.map { "\($0) U/h for \(determination.duration ?? 0) min" } ?? "none"), SMB \(determination.units ?? 0) U"
-                )
-                // Capture weak self in closure
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.broadcaster.notify(DeterminationObserver.self, on: .main) {
-                        $0.determinationDidUpdate(determination)
-                    }
+            info(
+                .loop,
+                "Determination: eventual BG \(determination.eventualBG.map { "\($0) mg/dL" } ?? "none"), temp basal \(determination.rate.map { "\($0) U/h for \(determination.duration ?? 0) min" } ?? "none"), SMB \(determination.units ?? 0) U"
+            )
+            // Capture weak self in closure
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.broadcaster.notify(DeterminationObserver.self, on: .main) {
+                    $0.determinationDidUpdate(determination)
                 }
             }
+
+            guard let storedID else {
+                throw APSError.apsError(message: "Determination was not stored")
+            }
+            return storedID
         } catch {
             iobFileDidUpdate.send(())
 
@@ -582,9 +674,11 @@ final class BaseAPSManager: APSManager, Injectable {
 
     func determineBasalSync() async throws {
         await loopGuard.waitForLoop()
-        guard await loopGuard.tryStartStandaloneDetermination() else {
-            debug(.loop, "Standalone determination skipped: one is already running")
-            return
+        // Never return as if a fresh determination ran when it did not: callers rely on it after
+        // a bolus, carb entry or adjustment.
+        guard await loopGuard.claimStandaloneDetermination(timeout: Self.standaloneDeterminationWait) else {
+            warning(.loop, "Standalone determination not run: an earlier one is still running")
+            throw APSError.apsError(message: "Another determination is still running. The next loop will update it.")
         }
         do {
             try await determineBasal()
@@ -594,6 +688,9 @@ final class BaseAPSManager: APSManager, Injectable {
         }
         await loopGuard.finishStandaloneDetermination()
     }
+
+    /// How long a standalone determination waits for one already running before giving up.
+    private static let standaloneDeterminationWait: TimeInterval = 60
 
     func simulateDetermineBasal(
         simulatedCarbsAmount: Decimal,
@@ -633,11 +730,11 @@ final class BaseAPSManager: APSManager, Injectable {
         return min(rounded, maxBolus)
     }
 
-    func enactBolus(amount: Double, isSMB: Bool, callback: ((Bool, String) -> Void)?) async {
+    func enactBolus(amount: Double, isSMB: Bool, completion: ((BolusEnactmentResult) -> Void)?) async {
         // Answer every caller: a silent return here left the watch waiting on "Processing…" forever
         guard amount > 0 else {
             warning(.bolus, "Bolus of \(amount) U not enacted, amount must be above 0")
-            callback?(false, Self.invalidBolusAmountMessage)
+            completion?(.failed(message: Self.invalidBolusAmountMessage, error: nil))
             return
         }
 
@@ -651,12 +748,18 @@ final class BaseAPSManager: APSManager, Injectable {
                     $0.bolusDidFail()
                 }
             }
-            callback?(false, String(localized: "Error! Failed to enact bolus.", comment: "Error message for enacting a bolus"))
+            completion?(.failed(
+                message: String(localized: "Error! Failed to enact bolus.", comment: "Error message for enacting a bolus"),
+                error: nil
+            ))
             return
         }
 
         guard let pump = pumpManager else {
-            callback?(false, String(localized: "Error! Failed to enact bolus.", comment: "Error message for enacting a bolus"))
+            completion?(.failed(
+                message: String(localized: "Error! Failed to enact bolus.", comment: "Error message for enacting a bolus"),
+                error: nil
+            ))
             return
         }
 
@@ -664,7 +767,7 @@ final class BaseAPSManager: APSManager, Injectable {
 
         guard roundedAmount > 0 else {
             warning(.bolus, "Bolus of \(amount) U not enacted, rounds to 0 U on this pump")
-            callback?(false, Self.invalidBolusAmountMessage)
+            completion?(.failed(message: Self.invalidBolusAmountMessage, error: nil))
             return
         }
 
@@ -674,7 +777,9 @@ final class BaseAPSManager: APSManager, Injectable {
             try await pump.enactBolus(units: roundedAmount, automatic: isSMB)
             info(.bolus, "Bolus enacted: \(roundedAmount) U, \(isSMB ? "automatic" : "manual")")
             bolusProgress.send(0)
-            callback?(true, String(localized: "Bolus enacted successfully.", comment: "Success message for enacting a bolus"))
+            completion?(.enacted(
+                message: String(localized: "Bolus enacted successfully.", comment: "Success message for enacting a bolus")
+            ))
             if !isSMB {
                 do {
                     try await determineBasalSync()
@@ -699,10 +804,10 @@ final class BaseAPSManager: APSManager, Injectable {
                     }
                 }
             }
-            callback?(
-                false,
-                String(localized: "Error! Bolus failed with error: \(bolusError.localizedDescription)")
-            )
+            completion?(.failure(
+                message: String(localized: "Error! Bolus failed with error: \(bolusError.localizedDescription)"),
+                error: bolusError
+            ))
         }
     }
 
@@ -780,14 +885,9 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
-    /// Returns false when the determination is skipped because the pump is suspended.
-    private func enactDetermination() async throws -> Bool {
-        guard let determinationID = try await determinationStorage
-            .fetchLastDeterminationObjectID(predicate: NSPredicate.predicateFor30MinAgoForDetermination).first
-        else {
-            throw APSError.apsError(message: "Determination not found")
-        }
-
+    /// Enacts the determination stored by this loop cycle. Returns false when it is skipped because the
+    /// pump is suspended.
+    private func enactDetermination(determinationID: NSManagedObjectID) async throws -> Bool {
         guard let pump = pumpManager else {
             throw APSError.apsError(message: "Pump not set")
         }
@@ -824,11 +924,17 @@ final class BaseAPSManager: APSManager, Injectable {
         context.name = "setValues"
         return try await context.perform {
             do {
-                let determination = try context.existingObject(with: determinationID) as? OrefDetermination
+                guard let determination = try context.existingObject(with: determinationID) as? OrefDetermination else {
+                    throw APSError.apsError(message: "Determination not found")
+                }
+                // Never enact a record twice: its SMB would be delivered again.
+                guard !determination.enacted else {
+                    throw APSError.apsError(message: "Determination was already enacted")
+                }
 
-                let rate = determination?.rate
-                let duration = determination?.duration.flatMap { TimeInterval(truncating: $0) * 60 }
-                let smbToDeliver = determination?.smbToDeliver ?? 0
+                let rate = determination.rate
+                let duration = determination.duration.flatMap { TimeInterval(truncating: $0) * 60 }
+                let smbToDeliver = determination.smbToDeliver ?? 0
 
                 return (rate, duration, smbToDeliver)
             } catch {
@@ -852,15 +958,8 @@ final class BaseAPSManager: APSManager, Injectable {
         bolusProgress.send(0)
     }
 
-    private func reportEnacted(wasEnacted: Bool) async {
+    private func reportEnacted(determinationID: NSManagedObjectID, wasEnacted: Bool) async {
         do {
-            guard let determinationID = try await determinationStorage
-                .fetchLastDeterminationObjectID(predicate: NSPredicate.predicateFor30MinAgoForDetermination).first
-            else {
-                debug(.loop, "No recent determination to mark as enacted")
-                return
-            }
-
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "reportEnacted"
             try await context.perform {
@@ -931,6 +1030,8 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
+    /// Errors arrive from the pump's queue, the loop task and bolus tasks at once; guarded by `transientCategoryLock`.
+    private let transientCategoryLock = NSLock()
     private var transientCategoryFirstSeen: [String: Date] = [:]
     private var transientCategoryCount: [String: Int] = [:]
     private static let transientDwellThreshold: TimeInterval = 60
@@ -955,27 +1056,30 @@ final class BaseAPSManager: APSManager, Injectable {
         let category = TrioAlertClassifier.categorize(error: error)
         let key = String(describing: category)
 
-        if category.shouldFireImmediately || currentLoopUserInitiated {
-            transientCategoryFirstSeen.removeValue(forKey: key)
-            transientCategoryCount.removeValue(forKey: key)
-            issueAlertForError(error, category: category)
-            return
-        }
-
+        let fireImmediately = category.shouldFireImmediately || currentLoopUserInitiated
         let now = Date()
-        let firstSeen = transientCategoryFirstSeen[key] ?? now
-        let count = (transientCategoryCount[key] ?? 0) + 1
-        let dwellElapsed = now.timeIntervalSince(firstSeen)
-        let dwellMet = dwellElapsed >= Self.transientDwellThreshold
-        let countMet = count >= Self.transientCountThreshold
-
-        if dwellMet || countMet {
-            transientCategoryFirstSeen.removeValue(forKey: key)
-            transientCategoryCount.removeValue(forKey: key)
-            issueAlertForError(error, category: category)
-        } else {
+        let (issue, count, dwellElapsed) = transientCategoryLock.withLock { () -> (Bool, Int, TimeInterval) in
+            if fireImmediately {
+                transientCategoryFirstSeen.removeValue(forKey: key)
+                transientCategoryCount.removeValue(forKey: key)
+                return (true, 0, 0)
+            }
+            let firstSeen = transientCategoryFirstSeen[key] ?? now
+            let count = (transientCategoryCount[key] ?? 0) + 1
+            let dwellElapsed = now.timeIntervalSince(firstSeen)
+            if dwellElapsed >= Self.transientDwellThreshold || count >= Self.transientCountThreshold {
+                transientCategoryFirstSeen.removeValue(forKey: key)
+                transientCategoryCount.removeValue(forKey: key)
+                return (true, count, dwellElapsed)
+            }
             transientCategoryFirstSeen[key] = firstSeen
             transientCategoryCount[key] = count
+            return (false, count, dwellElapsed)
+        }
+
+        if issue {
+            issueAlertForError(error, category: category)
+        } else {
             debug(
                 .alerts,
                 "Alert for transient \(category) held back: \(count) of \(Self.transientCountThreshold) occurrences, \(Int(dwellElapsed)) of \(Int(Self.transientDwellThreshold)) s"

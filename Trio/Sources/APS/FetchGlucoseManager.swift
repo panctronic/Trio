@@ -108,26 +108,19 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
             }
             .sink { glucose in
                 debug(.cgm, "Glucose source returned \(glucose.count) readings")
-                Publishers.CombineLatest(
-                    Just(glucose),
-                    Just(self.glucoseStorage.syncDate())
-                )
-                .eraseToAnyPublisher()
-                .sink { newGlucose, syncDate in
-                    self.glucoseStoreAndHeartLock.wait()
-                    Task {
-                        do {
-                            try await self.glucoseStoreAndHeartDecision(
-                                syncDate: syncDate,
-                                glucose: newGlucose
-                            )
-                        } catch {
-                            warning(.cgm, "Storing glucose failed", error: error)
-                        }
-                        self.glucoseStoreAndHeartLock.signal()
+                let syncDate = self.glucoseStorage.syncDate()
+                self.glucoseStoreAndHeartLock.wait()
+                Task {
+                    do {
+                        try await self.glucoseStoreAndHeartDecision(
+                            syncDate: syncDate,
+                            glucose: glucose
+                        )
+                    } catch {
+                        warning(.cgm, "Storing glucose failed", error: error)
                     }
+                    self.glucoseStoreAndHeartLock.signal()
                 }
-                .store(in: &self.lifetime)
             }
             .store(in: &lifetime)
         timer.fire()
@@ -229,7 +222,7 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
 
     private func updateManagerUnits(_ manager: CGMManagerUI?) {
         let units = settingsManager.settings.units
-        let managerName = cgmManager.map { "\(type(of: $0))" } ?? "nil"
+        let managerName = manager.map { "\(type(of: $0))" } ?? "nil"
         let loopkitUnits: LoopUnit = units == .mgdL ? .milligramsPerDeciliter : .millimolesPerLiter
         debug(.cgm, "\(managerName) units set to \(loopkitUnits.unitString)")
         manager?.unitDidChange(to: loopkitUnits)
@@ -255,6 +248,7 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
         // if plugin, if not the same pluginID, need to reset the cgmManager
         // if plugin and newManager provides, update cgmManager
         if let manager = newManager {
+            updateManagerUnits(manager)
             cgmManager = manager
             removeCalibrations()
         } else if self.cgmGlucoseSourceType == .plugin, cgmManager == nil, let rawCGMManager = rawCGMManager {
@@ -306,9 +300,9 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
         var filteredByDate: [BloodGlucose] = []
         var filtered: [BloodGlucose] = []
 
-        // Start background task
-        var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-        backgroundTaskID = startBackgroundTask(withName: "Glucose Store and Heartbeat Decision")
+        // Start background task; ended on every exit, including the throwing store calls below
+        var backgroundTaskID = startBackgroundTask(withName: "Glucose Store and Heartbeat Decision")
+        defer { endBackgroundTaskSafely(&backgroundTaskID, taskName: "Glucose Store and Heartbeat Decision") }
 
         // Check if sensor emitted calibrations
         let calibrations = glucose.filter { $0.mbg != nil }
@@ -317,10 +311,7 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
             try await glucoseStorage.storeGlucose(calibrations)
         }
 
-        guard newGlucose.isNotEmpty else {
-            endBackgroundTaskSafely(&backgroundTaskID, taskName: "Glucose Store and Heartbeat Decision")
-            return
-        }
+        guard newGlucose.isNotEmpty else { return }
 
         let backfillGlucose = newGlucose.filter { $0.dateString <= syncDate }
         if backfillGlucose.isNotEmpty {
@@ -341,10 +332,7 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
             )
         }
 
-        guard filtered.isNotEmpty else {
-            endBackgroundTaskSafely(&backgroundTaskID, taskName: "Glucose Store and Heartbeat Decision")
-            return
-        }
+        guard filtered.isNotEmpty else { return }
         debug(.cgm, "Storing \(filtered.count) new glucose readings")
 
         try await glucoseStorage.storeGlucose(filtered)
@@ -364,8 +352,6 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
         deviceDataManager.heartbeat(date: Date())
 
         TelemetryClient.shared.checkAndSendIfOverdueInBackground()
-
-        endBackgroundTaskSafely(&backgroundTaskID, taskName: "Glucose Store and Heartbeat Decision")
     }
 
     func sourceInfo() -> [String: Any]? {
@@ -426,6 +412,7 @@ extension CGMManager {
 extension BaseFetchGlucoseManager: SettingsObserver {
     /// Smooth glucose data when smoothing is turned on.
     func settingsDidChange(_: TrioSettings) {
+        updateManagerUnits(cgmManager)
         let smoothingWasEnabled = shouldSmoothGlucose
         let smoothingIsEnabled = settingsManager.settings.smoothGlucose
         shouldSmoothGlucose = smoothingIsEnabled
