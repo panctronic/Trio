@@ -174,6 +174,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                     newTempBasal.deliveredUnits = dose.deliveredUnits.map { Decimal($0) as NSDecimalNumber }
                     newTempBasal.tempType = TempType.absolute.rawValue
                     newTempBasal.isScheduledBasal = isScheduledBasal
+                    if !isScheduledBasal, span.duration == 0 {
+                        Self.truncateOpenTempBasals(endedAt: span.start, in: context)
+                    }
 
                 case .pumpAlarm:
                     newPumpEvent.note = event.title
@@ -240,6 +243,29 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             dose.startDate,
             dose.endDate
         )
+    }
+
+    /// Drivers like MinimedKit report a cancelled temp basal by emitting a 0-duration `.tempBasal`
+    /// at the cancel timestamp without shortening the prior temp basal's `endDate`. Truncate any
+    /// overlapping prior temp basal in Core Data so TDD and exports match the actual delivery span.
+    private static func truncateOpenTempBasals(endedAt: Date, in context: NSManagedObjectContext) {
+        let request = NSFetchRequest<TempBasalStored>(entityName: "TempBasalStored")
+        request.predicate = NSPredicate(
+            format: "isScheduledBasal == NO AND duration > 0 AND startDate < %@ AND endDate > %@",
+            endedAt as NSDate,
+            endedAt as NSDate
+        )
+        guard let overlapping = try? context.fetch(request) else { return }
+        for prior in overlapping {
+            guard let startDate = prior.startDate else { continue }
+            let newDuration = Int16(max(0, round((endedAt - startDate).timeInterval / 60)))
+            let previousDuration = prior.duration
+            prior.endDate = endedAt
+            prior.duration = newDuration
+            if newDuration != previousDuration, prior.pumpEvent?.isUploadedToNS == true {
+                prior.pumpEvent?.isUploadedToNS = false
+            }
+        }
     }
 
     /// Finalized reports freeze the row with delivered values. If NS-visible
