@@ -118,7 +118,8 @@ protocol TherapyProfileManager: AnyObject {
     /// Throws `liveSettingsNotStored` when `write` succeeded but storing the active profile's values failed.
     /// `proposed` is the active profile with the editor's change applied. It is checked like a profile save before `write`
     /// runs, and `invalidValues` is thrown when the change introduces a value the profile checks refuse (e.g. a basal rate
-    /// above max basal, which oref would otherwise silently cap).
+    /// above max basal, which oref would otherwise silently cap). With `writesBasalSchedule` and `proposed`, this sends
+    /// `proposed`'s basal schedule to the pump itself (with the pump timeout), and `write` must only store the settings.
     @discardableResult func saveLiveSettings(
         expectedActiveName: String,
         expectedFingerprint: String,
@@ -455,7 +456,20 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
                 warning(.settings, "Basal schedule not sent, the pump is suspended")
                 throw TherapyProfileError.pumpSuspended
             }
-            try await write()
+            if writesBasalSchedule, let proposed {
+                // Sent here, with the pump timeout and the resend after an unanswered write; `write` then only
+                // stores the settings.
+                try await self.syncPump(proposed)
+                do {
+                    try await write()
+                } catch {
+                    // The pump holds the new schedule, the live settings the old one: send the live one again.
+                    self.pumpScheduleUnconfirmed = true
+                    throw error
+                }
+            } else {
+                try await write()
+            }
             let live = self.liveProfile(named: active.name)
             if let index = state.profiles.firstIndex(where: { $0.name == active.name }) {
                 state.profiles[index] = live
@@ -711,9 +725,23 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     func runDueScheduledSwitch(inLoop: Bool) async {
         let run: ScheduledSwitchRun
         do {
-            run = try await serializer.run {
-                try? await self.reconcilePumpScheduleStep()
-                return try await self.runDueScheduledSwitchStep()
+            if inLoop {
+                // Every loop calls this. Only take the serializer when there is work, and never wait for it: an edit or
+                // activation holding it (up to the pump timeout) must not hold up dosing. The next loop tries again.
+                guard hasScheduledSwitchWork() else { return }
+                guard let result = try await serializer.runIfIdle({
+                    try? await self.reconcilePumpScheduleStep()
+                    return try await self.runDueScheduledSwitchStep()
+                }) else {
+                    debug(.settings, "Scheduled profile switch skipped this loop, another profile change is running")
+                    return
+                }
+                run = result
+            } else {
+                run = try await serializer.run {
+                    try? await self.reconcilePumpScheduleStep()
+                    return try await self.runDueScheduledSwitchStep()
+                }
             }
         } catch {
             warning(.settings, "Running the scheduled profile switch failed", error: error)
@@ -734,6 +762,16 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
             debug(.settings, "Scheduled profile switch of \(occurrence.date) not done yet, retrying on the next run")
             await armScheduledSwitchAlert(reason: reason)
         }
+    }
+
+    /// Whether a run could do anything, from the loaded state without the serializer: a scheduled start is due for a
+    /// profile that is not active, the list was never settled, or the pump's schedule is unconfirmed. Errs towards true.
+    private func hasScheduledSwitchWork() -> Bool {
+        if pumpScheduleUnconfirmed { return true }
+        guard let state = loadedState else { return true }
+        guard !state.scheduledSwitches.isEmpty else { return false }
+        guard let settledAt = state.scheduledSwitchesSettledAt else { return true }
+        return state.scheduledSwitches.newestOccurrence(after: settledAt, upTo: now(), calendar: calendar) != nil
     }
 
     private func runDueScheduledSwitchStep() async throws -> ScheduledSwitchRun {
@@ -1091,8 +1129,11 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
 /// Runs operations one at a time, in the order they arrive. Calling `run` from inside an operation deadlocks.
 private actor TherapyProfileSerializer {
     private var tail: Task<Void, Never>?
+    private var pending = 0
 
     func run<T: Sendable>(_ operation: @escaping @Sendable() async throws -> T) async throws -> T {
+        pending += 1
+        defer { pending -= 1 }
         let previous = tail
         let task = Task<T, Error> {
             await previous?.value
@@ -1100,5 +1141,11 @@ private actor TherapyProfileSerializer {
         }
         tail = Task { _ = try? await task.value }
         return try await task.value
+    }
+
+    /// Runs `operation` only when nothing else is running or queued; returns nil without running it otherwise.
+    func runIfIdle<T: Sendable>(_ operation: @escaping @Sendable() async throws -> T) async throws -> T? {
+        guard pending == 0 else { return nil }
+        return try await run(operation)
     }
 }

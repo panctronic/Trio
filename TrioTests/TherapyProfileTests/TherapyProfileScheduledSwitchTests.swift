@@ -155,6 +155,51 @@ import Testing
         #expect(context.manager.activeProfileName == "Weekend")
     }
 
+    @Test("The loop skips a due switch while another profile change holds the serializer") func inLoopSkipsWhenBusy() async throws {
+        let context = try await makeContext()
+        let manager = context.manager
+        let gate = AsyncGate()
+        context.recorder.pumpGate = { await gate.wait() }
+        let activating = Task { try await manager.activate("Weekend", expectedFingerprint: nil) }
+        #expect(await eventually { context.recorder.pumpWrites == 1 })
+
+        context.recorder.now = date("2026-11-14 07:01")
+        let started = Date()
+        await manager.runDueScheduledSwitch(inLoop: true)
+        #expect(Date().timeIntervalSince(started) < 1, "the loop must not wait for the running change")
+
+        context.recorder.pumpGate = nil
+        await gate.open()
+        _ = try await activating.value
+        #expect(manager.activeProfileName == "Weekend")
+    }
+
+    @Test("A live basal edit whose pump write is not answered is refused as uncertain and resent")
+    func liveBasalEditTimesOut() async throws {
+        let context = try await makeContext()
+        let base = context.manager.activeProfile()
+        let gate = AsyncGate()
+        context.recorder.pumpGate = { await gate.wait() }
+        context.recorder.pumpSyncTimeout = 0.3
+        let newBasal = [BasalProfileEntry(start: "00:00:00", minutes: 0, rate: 1.5)]
+
+        let wrote = LockedFlag()
+        await #expect(throws: TherapyProfileError.pumpSyncUncertain) {
+            try await context.manager.saveLiveSettings(
+                expectedActiveName: base.name,
+                expectedFingerprint: base.fingerprint(units: .mgdL),
+                writesBasalSchedule: true,
+                proposed: base.replacing(basalProfile: newBasal)
+            ) { wrote.set() }
+        }
+        #expect(!wrote.value)
+
+        context.recorder.pumpGate = nil
+        await gate.open()
+        #expect(await eventually { context.recorder.pumpWrites == 2 })
+        #expect(context.liveBasal == base.basal.map(\.value))
+    }
+
     @Test("Editing the list keeps a due start that is still retrying") func editKeepsPendingStart() async throws {
         let context = try await makeContext()
         context.recorder.pumpError = PumpFailure()
