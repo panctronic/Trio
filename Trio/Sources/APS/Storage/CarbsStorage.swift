@@ -59,7 +59,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     }
 
     func storeCarbs(_ entries: [CarbsEntry], areFetchedFromRemote: Bool, nightscoutSiteURL: String?) async throws {
-        var entriesToStore = entries
+        // A meal with fat or protein must share an fpuID with its carb equivalents, or deleting the meal leaves them behind
+        var entriesToStore = entries.map(Self.withFPUIDIfNeeded)
 
         if areFetchedFromRemote {
             entriesToStore = try await filterRemoteEntries(entries: entriesToStore)
@@ -96,6 +97,24 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             entries: entriesToStore,
             areFetchedFromRemote: areFetchedFromRemote,
             nightscoutSiteURL: nightscoutSiteURL
+        )
+    }
+
+    /// Gives a meal with fat or protein an `fpuID` if it has none, so the meal and the carb equivalents made from it
+    /// are linked. Without it the equivalents got an fpuID of their own and stayed, as phantom COB, when the meal was deleted.
+    static func withFPUIDIfNeeded(_ entry: CarbsEntry) -> CarbsEntry {
+        guard entry.fpuID == nil, entry.isFPU != true, (entry.fat ?? 0) > 0 || (entry.protein ?? 0) > 0 else { return entry }
+        return CarbsEntry(
+            id: entry.id,
+            createdAt: entry.createdAt,
+            actualDate: entry.actualDate,
+            carbs: entry.carbs,
+            fat: entry.fat,
+            protein: entry.protein,
+            note: entry.note,
+            enteredBy: entry.enteredBy,
+            isFPU: entry.isFPU,
+            fpuID: UUID().uuidString
         )
     }
 
@@ -583,6 +602,19 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 // entry has no fpuID
                 // => it's a carb-only entry. use its ID to for deletion
                 else {
+                    // Meals with fat or protein saved without an fpuID (e.g. by older Shortcut versions) left their carb
+                    // equivalents under an fpuID of their own. Delete those too when they can be matched unambiguously.
+                    if let orphanedFPUID = try self.orphanedCarbEquivalentsID(for: carbEntry, in: context) {
+                        let orphanRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+                        orphanRequest.predicate = NSPredicate(
+                            format: "fpuID == %@ AND isFPU == YES",
+                            orphanedFPUID as CVarArg
+                        )
+                        let orphans = try context.fetch(orphanRequest)
+                        orphans.forEach(context.delete)
+                        debug(.storage, "Deleting \(orphans.count) unlinked carb equivalents with meal")
+                    }
+
                     context.delete(carbEntry)
 
                     guard context.hasChanges else { return }
@@ -595,6 +627,81 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 warning(.storage, "Deleting carb entry failed", error: error)
             }
         }
+    }
+
+    /// Finds the carb equivalents made from `meal` when the meal itself has no `fpuID` to link them.
+    ///
+    /// Matches only a group of carb equivalents that no meal links to, that starts within the longest possible fat/protein
+    /// delay after the meal, and that no other unlinked fat/protein meal could also have made. Returns `nil` otherwise,
+    /// so an uncertain match never deletes carbs that belong to another meal.
+    /// Must be called on `context`'s queue.
+    private func orphanedCarbEquivalentsID(for meal: CarbEntryStored, in context: NSManagedObjectContext) throws -> UUID? {
+        guard !meal.isFPU, meal.fpuID == nil, meal.fat > 0 || meal.protein > 0, let mealDate = meal.date else { return nil }
+
+        let providerSettings = settingsProvider.settings
+        let maxDelay = TimeInterval(Double(truncating: providerSettings.delay.max as NSNumber) * 60)
+        // Up to 3 equivalents are spread over the interval after the first one
+        let maxSpread = TimeInterval(Double(truncating: providerSettings.minuteInterval.max as NSNumber) * 60 * 2)
+
+        func window(after date: Date) -> ClosedRange<Date> {
+            date.addingTimeInterval(1) ... date.addingTimeInterval(maxDelay)
+        }
+
+        // fpuIDs of carb equivalents that may belong to this meal
+        let equivalentsRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+        equivalentsRequest.predicate = NSPredicate(
+            format: "isFPU == YES AND fpuID != nil AND date > %@ AND date <= %@",
+            mealDate as NSDate,
+            mealDate.addingTimeInterval(maxDelay + maxSpread) as NSDate
+        )
+        let nearbyIDs = Array(Set(try context.fetch(equivalentsRequest).compactMap(\.fpuID)))
+        guard !nearbyIDs.isEmpty else { return nil }
+
+        // A group whose first equivalent lies before this meal belongs to an earlier one
+        let groupStart = try earliestDates(of: nearbyIDs, in: context)
+        let startingAfterMeal = nearbyIDs.filter { id in
+            groupStart[id].map { window(after: mealDate).contains($0) } == true
+        }
+        guard !startingAfterMeal.isEmpty else { return nil }
+
+        // Skip groups a meal still links to
+        let linkedRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+        linkedRequest.predicate = NSPredicate(format: "isFPU == NO AND fpuID IN %@", startingAfterMeal)
+        let linkedIDs = Set(try context.fetch(linkedRequest).compactMap(\.fpuID))
+        let orphanIDs = startingAfterMeal.filter { !linkedIDs.contains($0) }
+        guard !orphanIDs.isEmpty else { return nil }
+
+        // Other unlinked fat/protein meals that could have made the same equivalents
+        let otherMealsRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+        otherMealsRequest.predicate = NSPredicate(
+            format: "isFPU == NO AND fpuID == nil AND (fat > 0 OR protein > 0) AND date >= %@ AND date <= %@ AND SELF != %@",
+            mealDate.addingTimeInterval(-maxDelay) as NSDate,
+            mealDate.addingTimeInterval(maxDelay) as NSDate,
+            meal.objectID
+        )
+        let otherMealDates = try context.fetch(otherMealsRequest).compactMap(\.date)
+
+        let unambiguous = orphanIDs.filter { id in
+            guard let start = groupStart[id] else { return false }
+            return !otherMealDates.contains { window(after: $0).contains(start) }
+        }
+        guard unambiguous.count == 1, orphanIDs.count == 1 else {
+            warning(.storage, "Unlinked carb equivalents near the deleted meal not deleted: match is ambiguous")
+            return nil
+        }
+        return unambiguous.first
+    }
+
+    /// The date of the first entry of each fpuID group, over all stored entries.
+    private func earliestDates(of fpuIDs: [UUID], in context: NSManagedObjectContext) throws -> [UUID: Date] {
+        let request: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
+        request.predicate = NSPredicate(format: "isFPU == YES AND fpuID IN %@", fpuIDs)
+        var earliest: [UUID: Date] = [:]
+        for entry in try context.fetch(request) {
+            guard let fpuID = entry.fpuID, let date = entry.date else { continue }
+            earliest[fpuID] = min(earliest[fpuID] ?? date, date)
+        }
+        return earliest
     }
 
     func fetchMealRoot(handle: UUID) async throws -> (objectID: NSManagedObjectID, snapshot: MealSnapshot)? {

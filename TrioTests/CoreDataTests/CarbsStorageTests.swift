@@ -669,6 +669,112 @@ import Testing
         #expect(rows.count == 1)
         #expect(rows.first?.id?.uuidString == other.id, "A failed replace must not touch other meals")
     }
+
+    // MARK: - Meals with fat and protein but no fpuID
+
+    /// Inserts rows the way older app versions left them: a fat/protein meal without fpuID and its carb
+    /// equivalents under an fpuID of their own.
+    private func insertUnlinkedMeal(at date: Date, equivalentsAfter delays: [TimeInterval]) async throws -> UUID {
+        let equivalentsID = UUID()
+        await testContext.perform {
+            let meal = CarbEntryStored(context: self.testContext)
+            meal.id = UUID()
+            meal.date = date
+            meal.carbs = 20
+            meal.fat = 40
+            meal.protein = 30
+            meal.isFPU = false
+            for delay in delays {
+                let equivalent = CarbEntryStored(context: self.testContext)
+                equivalent.id = UUID()
+                equivalent.date = date.addingTimeInterval(delay)
+                equivalent.carbs = 15
+                equivalent.isFPU = true
+                equivalent.fpuID = equivalentsID
+            }
+            try? self.testContext.save()
+        }
+        return equivalentsID
+    }
+
+    private func mealRow(at date: Date) async throws -> NSManagedObjectID {
+        guard let objectID = try await allStoredRows().first(where: { !$0.isFPU && $0.date == date })?.objectID else {
+            throw TestError("Meal not found")
+        }
+        return objectID
+    }
+
+    @Test("A fat/protein meal stored without fpuID is linked to its carb equivalents") func testStoreAssignsFPUID() async throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let meal = CarbsEntry(
+            id: UUID().uuidString, createdAt: date, actualDate: date, carbs: 20, fat: 50, protein: 100,
+            note: "Via Shortcut", enteredBy: "Test", isFPU: false, fpuID: nil
+        )
+        try await storage.storeCarbs([meal], areFetchedFromRemote: false)
+
+        let rows = try await allStoredRows()
+        let root = rows.first { !$0.isFPU }
+        #expect(root?.fpuID != nil, "The meal must get an fpuID")
+        #expect(rows.contains { $0.isFPU }, "Carb equivalents must be created")
+        #expect(rows.filter(\.isFPU).allSatisfy { $0.fpuID == root?.fpuID }, "Equivalents must share the meal's fpuID")
+
+        await storage.deleteCarbsEntryStored(try await mealRow(at: date))
+        #expect(try await allStoredRows().isEmpty, "Deleting the meal must delete its carb equivalents")
+    }
+
+    @Test("Deleting an unlinked fat/protein meal also deletes its carb equivalents") func testDeleteUnlinkedMeal() async throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try await insertUnlinkedMeal(at: date, equivalentsAfter: [3600, 5400])
+
+        await storage.deleteCarbsEntryStored(try await mealRow(at: date))
+
+        #expect(try await allStoredRows().isEmpty, "No phantom carb equivalents may stay behind")
+    }
+
+    @Test("Carb equivalents of another meal are kept") func testDeleteUnlinkedMealKeepsLinkedEquivalents() async throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        // A properly linked meal 10 min later, whose equivalents fall in the same window
+        let linked = CarbsEntry(
+            id: UUID().uuidString, createdAt: date.addingTimeInterval(600), actualDate: date.addingTimeInterval(600),
+            carbs: 0, fat: 50, protein: 100, note: nil, enteredBy: "Test", isFPU: false, fpuID: UUID().uuidString
+        )
+        try await storage.storeCarbs([linked], areFetchedFromRemote: false)
+        let linkedCount = try await allStoredRows().count
+        await testContext.perform {
+            let meal = CarbEntryStored(context: self.testContext)
+            meal.id = UUID()
+            meal.date = date
+            meal.carbs = 20
+            meal.fat = 40
+            meal.isFPU = false
+            try? self.testContext.save()
+        }
+
+        await storage.deleteCarbsEntryStored(try await mealRow(at: date))
+
+        #expect(try await allStoredRows().count == linkedCount, "Only the deleted meal may go")
+    }
+
+    @Test("Ambiguous unlinked carb equivalents are kept") func testDeleteUnlinkedMealAmbiguous() async throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try await insertUnlinkedMeal(at: date, equivalentsAfter: [3600, 5400])
+        // A second unlinked meal 15 min later, without equivalents: either meal could have made them
+        await testContext.perform {
+            let meal = CarbEntryStored(context: self.testContext)
+            meal.id = UUID()
+            meal.date = date.addingTimeInterval(900)
+            meal.carbs = 10
+            meal.protein = 50
+            meal.isFPU = false
+            try? self.testContext.save()
+        }
+
+        await storage.deleteCarbsEntryStored(try await mealRow(at: date))
+
+        let rows = try await allStoredRows()
+        #expect(rows.filter(\.isFPU).count == 2, "An ambiguous match must not delete carb equivalents")
+        #expect(rows.filter { !$0.isFPU }.count == 1)
+    }
 }
 
 private final class SaveCounter: @unchecked Sendable {

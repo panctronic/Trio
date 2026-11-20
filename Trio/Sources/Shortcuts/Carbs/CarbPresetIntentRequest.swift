@@ -10,8 +10,10 @@ final class CarbPresetIntentRequest: BaseIntentsRequest {
         _ note: String?,
         _ dateDefinedByUser: Bool
     ) async throws -> String {
-        guard quantityCarbs >= 0 || quantityFat >= 0 || quantityProtein >= 0 else {
-            return "Amount must be positive."
+        guard quantityCarbs >= 0, quantityFat >= 0, quantityProtein >= 0,
+              quantityCarbs > 0 || quantityFat > 0 || quantityProtein > 0
+        else {
+            return String(localized: "Amount must be positive.")
         }
 
         try await carbsStorage.storeCarbs(
@@ -24,10 +26,18 @@ final class CarbPresetIntentRequest: BaseIntentsRequest {
                 protein: Decimal(quantityProtein),
                 note: (note?.isEmpty ?? true) ? "Via Shortcut" : note!,
                 enteredBy: CarbsEntry.local,
-                isFPU: false, fpuID: nil
+                isFPU: false,
+                // Links the meal to the carb equivalents made from its fat and protein, so deleting it removes them too
+                fpuID: quantityFat > 0 || quantityProtein > 0 ? UUID().uuidString : nil
             )],
             areFetchedFromRemote: false
         )
+        // Like the Treatments screen, update COB and the forecast for the new carbs right away
+        do {
+            try await apsManager.determineBasalSync()
+        } catch {
+            warning(.treatments, "Determination after Shortcut carbs failed", error: error)
+        }
         var resultDisplay: String
         resultDisplay = String(localized: "Added \(quantityCarbs) g carbs")
         if quantityFat > 0 {

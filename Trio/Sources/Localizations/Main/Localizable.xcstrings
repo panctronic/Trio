@@ -1092,6 +1092,9 @@
     "%@ g is more than the max carbs of %@ g." : {
       "comment" : "Watch message when carbs above the max carbs setting are refused"
     },
+    "Amount must be positive." : {
+
+    },
     "Bolus status unknown. Check pump history before repeating." : {
       "comment" : "Watch message when the outcome of a bolus is not known"
     },

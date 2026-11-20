@@ -31,4 +31,32 @@ import Testing
         #expect(entry.enteredBy == CarbsEntry.local)
         #expect(entry.id.flatMap(UUID.init(uuidString:)) != nil)
     }
+
+    // MARK: - Meal fpuID
+
+    @Test("A meal with fat or protein gets an fpuID") func testFPUIDAssigned() {
+        let meal = CarbsEntry(
+            id: UUID().uuidString, createdAt: now, actualDate: now, carbs: 20, fat: 10, protein: 0,
+            note: nil, enteredBy: CarbsEntry.local, isFPU: false, fpuID: nil
+        )
+        let stored = BaseCarbsStorage.withFPUIDIfNeeded(meal)
+        #expect(stored.fpuID.flatMap(UUID.init(uuidString:)) != nil)
+        #expect(stored.id == meal.id)
+        #expect(stored.carbs == meal.carbs && stored.fat == meal.fat && stored.protein == meal.protein)
+    }
+
+    @Test("A carbs-only meal or one with an fpuID is unchanged") func testFPUIDKept() {
+        let carbsOnly = CarbsEntry(
+            id: UUID().uuidString, createdAt: now, actualDate: now, carbs: 20, fat: 0, protein: 0,
+            note: nil, enteredBy: CarbsEntry.local, isFPU: false, fpuID: nil
+        )
+        #expect(BaseCarbsStorage.withFPUIDIfNeeded(carbsOnly).fpuID == nil)
+
+        let fpuID = UUID().uuidString
+        let linked = CarbsEntry(
+            id: UUID().uuidString, createdAt: now, actualDate: now, carbs: 20, fat: 10, protein: 5,
+            note: nil, enteredBy: CarbsEntry.local, isFPU: false, fpuID: fpuID
+        )
+        #expect(BaseCarbsStorage.withFPUIDIfNeeded(linked).fpuID == fpuID)
+    }
 }
