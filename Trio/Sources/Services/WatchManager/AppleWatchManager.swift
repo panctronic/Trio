@@ -25,6 +25,8 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
 
     /// Outcome (logged or not) of recent Watch carb entries, by their date, for the bolus the Watch sends with them
     @MainActor private var watchCarbsOutcomes: [TimeInterval: Task<Bool, Never>] = [:]
+    /// The last Watch carbs received, for a bolus from an older Watch app that does not say which carbs it belongs to
+    @MainActor private var lastWatchCarbs: (receivedAt: Date, outcome: Task<Bool, Never>)?
     @Injected() private var overrideStorage: OverrideStorage!
     @Injected() private var tempTargetStorage: TempTargetsStorage!
     @Injected() private var adjustmentManager: AdjustmentManager!
@@ -849,8 +851,18 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     ///   - mealDate: The date of the carbs sent just before as part of the same entry, if any
     @MainActor private func handleBolusRequest(_ amount: Decimal, overriding: Set<BolusSafetyCheck>, mealDate: TimeInterval?) {
         Task {
-            // The bolus was worked out for those carbs: none if they were refused or could not be saved
-            if let mealDate, await !watchCarbsWereLogged(at: mealDate) {
+            // The bolus was worked out for those carbs: none if they were refused or could not be saved.
+            // Older Watch apps send no mealDate; their carbs come just before the bolus, so carbs received in the
+            // last few seconds count as this bolus's carbs. A confirmation past a safety check comes much later.
+            let carbsWereLogged: Bool
+            if let mealDate {
+                carbsWereLogged = await watchCarbsWereLogged(at: mealDate)
+            } else if overriding.isEmpty, let recentCarbs = recentWatchCarbs(receivedWithin: Self.unpairedBolusWindow) {
+                carbsWereLogged = await recentCarbs.value
+            } else {
+                carbsWereLogged = true
+            }
+            if !carbsWereLogged {
                 info(.watch, "Watch bolus of \(amount) U refused: the carbs entered with it were not logged")
                 sendAcknowledgment(
                     toWatch: false,
@@ -990,6 +1002,16 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
         let now = Date().timeIntervalSince1970
         watchCarbsOutcomes = watchCarbsOutcomes.filter { now - $0.key < Self.watchCarbsOutcomeLifetime }
         watchCarbsOutcomes[date.timeIntervalSince1970] = outcome
+        lastWatchCarbs = (receivedAt: Date(), outcome: outcome)
+    }
+
+    /// How recently carbs must have been received for a bolus without a mealDate to be treated as theirs.
+    static let unpairedBolusWindow: TimeInterval = 5
+
+    /// The outcome of the last Watch carbs, if they were received within `window`.
+    @MainActor private func recentWatchCarbs(receivedWithin window: TimeInterval) -> Task<Bool, Never>? {
+        guard let lastWatchCarbs, Date().timeIntervalSince(lastWatchCarbs.receivedAt) <= window else { return nil }
+        return lastWatchCarbs.outcome
     }
 
     /// How long the outcome of Watch carbs is kept for the bolus sent with them.
