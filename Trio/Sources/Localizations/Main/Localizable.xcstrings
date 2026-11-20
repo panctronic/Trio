@@ -1092,6 +1092,9 @@
     "%@ g is more than the max carbs of %@ g." : {
       "comment" : "Watch message when carbs above the max carbs setting are refused"
     },
+    "%@ status" : {
+      "comment" : "Accessibility label; %@ is Nightscout, Tidepool or Apple Health"
+    },
     "%@ U of external insulin was logged. Do not log it again. Only updating the forecast failed: %@" : {
       "comment" : "Message when external insulin was saved but the following determination failed; the arguments are the amount and the reason"
     },
@@ -1100,6 +1103,9 @@
     },
     "%@ U was rounded down to what the pump can deliver." : {
       "comment" : "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
+    },
+    "%lld waiting" : {
+      "comment" : "Sync status details: number of records not yet uploaded"
     },
     "A bolus of %@ U of insulin was enacted." : {
       "comment" : "Shortcut result when the pump confirmed the bolus"
@@ -1112,6 +1118,12 @@
     },
     "Are you sure to log %@ U of external insulin?" : {
 
+    },
+    "Asks Trio to upload the records waiting for %@ now." : {
+      "comment" : "Accessibility hint for Retry now; %@ is Nightscout, Tidepool or Apple Health"
+    },
+    "Behind" : {
+      "comment" : "Sync status: records are waiting to upload"
     },
     "Bolus not enacted: the carbs entered with it were not logged." : {
       "comment" : "Watch message when a bolus is refused because its carbs were refused or not saved"
@@ -1140,17 +1152,74 @@
     "Carbs were saved, but the pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
       "comment" : "Alert when a meal was saved and it is not known whether the bolus with it was delivered; the argument is the pump's reason"
     },
+    "Deletions waiting" : {
+      "comment" : "Sync status: label for the number of remote deletions waiting for a retry"
+    },
+    "Details" : {
+      "comment" : "Sync status: expands the per-data-kind breakdown"
+    },
+    "Device Status" : {
+      "comment" : "Sync status data kind"
+    },
     "Error! Carbs could not be saved." : {
       "comment" : "Watch message when carbs from the watch could not be saved"
+    },
+    "Failed %@: %@" : {
+      "comment" : "Sync status details; first %@ is a relative time, second the error message"
+    },
+    "Insulin and Pump Events" : {
+      "comment" : "Sync status data kind"
+    },
+    "Last error" : {
+      "comment" : "Sync status: label for the most recent upload failure"
+    },
+    "Last upload" : {
+      "comment" : "Sync status: label for the time of the last successful upload"
+    },
+    "Last upload %@" : {
+      "comment" : "Sync status details; %@ is a relative time like \"5 minutes ago\""
     },
     "No bolus enacted." : {
       "comment" : "Watch message added when a bolus was not given because its carbs could not be saved"
     },
+    "No upload recorded" : {
+      "comment" : "Sync status details: no successful upload of this kind yet"
+    },
+    "None recorded" : {
+      "comment" : "Sync status: no successful upload recorded yet"
+    },
+    "Not set up, or uploads are switched off." : {
+      "comment" : "Sync status: destination is off"
+    },
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
     },
+    "Oldest waiting" : {
+      "comment" : "Sync status: label for the age of the oldest record not yet uploaded"
+    },
+    "Overrides and Temp Targets" : {
+      "comment" : "Sync status data kind"
+    },
+    "Records that could not be uploaded are retried for %lld days (Nightscout) or %lld days (Tidepool and Apple Health). Older records are not uploaded." : {
+      "comment" : "Sync status footer; the numbers are the upload retry windows in days"
+    },
+    "Retry now" : {
+      "comment" : "Sync status: button that asks the destination's uploads to run now"
+    },
+    "Shows whether Trio's uploads are reaching Nightscout, Tidepool and Apple Health, so followers and your care team see complete data." : {
+      "comment" : "Sync status screen introduction"
+    },
+    "Sync Status" : {
+      "comment" : "Title of the screen showing upload status per destination"
+    },
     "The carbs could not be saved, so no insulin was given or logged. Please try again." : {
       "comment" : "Alert when saving the meal failed on the treatments screen"
+    },
+    "The oldest waiting records have left the upload window and will not be uploaded." : {
+      "comment" : "Sync status warning"
+    },
+    "The oldest waiting records leave the upload window %@. After that they will not be uploaded." : {
+      "comment" : "Sync status warning; %@ is a relative time like \"in 5 hours\""
     },
     "The outcome of the bolus is not known. Check pump history before repeating the bolus." : {
       "comment" : "Alert when no outcome was reported for the bolus from the treatments screen"
@@ -1281,6 +1350,9 @@
     "Switches to %@ at %@" : {
       "comment" : "Next scheduled therapy profile switch today; first %@ is a profile name, second a clock time"
     },
+    "Tidepool needs you to log in again." : {
+      "comment" : "Sync status: why Tidepool uploads cannot run"
+    },
     "To bolus anyway, swipe up on the bar until it is full." : {
       "comment" : "Watch bolus override confirmation with VoiceOver"
     },
@@ -1290,11 +1362,20 @@
     "Trio can send the Trio team a small, anonymous usage report once a day. It helps the team see which app versions, devices, pumps and CGMs are in use, so testing and support can focus on what people actually run." : {
       "comment" : "Usage data sharing explanation"
     },
+    "Trio is not allowed to write to Apple Health. Check the permissions in the Health app." : {
+      "comment" : "Sync status: why Apple Health uploads cannot run"
+    },
     "Trio sends no usage data." : {
       "comment" : "Onboarding usage data option caption"
     },
     "updated at %@" : {
       "comment" : "Accessibility: Live Activity update time; %@ is a clock time"
+    },
+    "Upload requested" : {
+      "comment" : "Sync status: shown briefly after tapping Retry now"
+    },
+    "Uploads are on, but the Nightscout URL or API secret is missing." : {
+      "comment" : "Sync status: why Nightscout uploads cannot run"
     },
     "Uploads are on, but the Nightscout URL or API secret is missing. Tap to check." : {
       "comment" : "Home panel when Nightscout upload is enabled without credentials"
@@ -1305,6 +1386,9 @@
     "Usage data is only sent if you agree to it. Until you choose, and whenever it is switched off, Trio makes no telemetry requests at all. Crash reporting is on unless you switch it off. Use the diagnostics-sharing chooser above: \"Enable Full Sharing\" shares crash reports and usage data, \"Crash Reports Only\" keeps crash reporting without usage data, and \"Disable Sharing\" turns off both. Changes take effect immediately." : {
       "comment" : "Telemetry privacy details"
     },
+    "Waiting to upload" : {
+      "comment" : "Sync status: label for the number of records not yet uploaded"
+    },
     "Warming up" : {
       "comment" : "CGM sensor status tag on the glucose bobble"
     },
@@ -1313,6 +1397,9 @@
     },
     "What is never sent" : {
       "comment" : "Heading in the usage data sharing explanation"
+    },
+    "Whether uploads are getting through, and what is still waiting." : {
+      "comment" : "Services settings footer under Sync Status"
     },
     "Your choice" : {
       "comment" : "Heading in the telemetry privacy details"

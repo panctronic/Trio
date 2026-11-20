@@ -41,5 +41,7 @@ final class ServiceAssembly: Assembly {
         container.register(TelemetryAttestor.self) { r in TelemetryAttestor(resolver: r) }
             .inObjectScope(.container)
         container.register(LogExport.self) { r in LogExport(resolver: r) }
+        container.register(SyncStatusTracker.self) { r in SyncStatusTracker(storage: r.resolve(FileStorage.self)!) }
+            .inObjectScope(.container)
     }
 }

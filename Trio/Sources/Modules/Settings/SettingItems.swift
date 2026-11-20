@@ -443,7 +443,8 @@ enum SettingItems {
             path: ["Services", "Nightscout", "Fetch and Remote Control"]
         ),
         SettingItem(title: "Tidepool", view: .serviceSettings, path: ["Services"]),
-        SettingItem(title: "Apple Health", view: .healthkit, path: ["Services"])
+        SettingItem(title: "Apple Health", view: .healthkit, path: ["Services"]),
+        SettingItem(title: "Sync Status", view: .syncStatus, path: ["Services"])
     ]
 
     static var allItems: [SettingItem] {
