@@ -11,11 +11,10 @@ extension AppDiagnostics {
             loadDiagnostics()
         }
 
-        /// Derives the 3-state option from the two underlying flags. Crash
-        /// reporting is on unless switched off (`nil` ⇒ on); usage telemetry is
-        /// opt-in, so it only counts as on after an explicit yes (`nil` ⇒ off).
+        /// Derives the 3-state option from the two underlying flags. Both crash
+        /// reporting and usage telemetry are opt-in (`nil` ⇒ off).
         func loadDiagnostics() {
-            let crashlytics = PropertyPersistentFlags.shared.crashlyticsSharingEnabled ?? true
+            let crashlytics = PropertyPersistentFlags.shared.crashlyticsSharingEnabled ?? false
             let telemetry = TelemetryConsent.current.allowsSending
             diagnosticsSharingOption = DiagnosticsSharingOption(
                 crashlyticsEnabled: crashlytics,

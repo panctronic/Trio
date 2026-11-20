@@ -32,8 +32,8 @@ final class PropertyPersistentFlags {
     // `telemetrySharingEnabled` gates every telemetry request and is opt-in:
     // `nil` means the user has not chosen yet and nothing is sent, only an
     // explicit `true` allows sending (see `TelemetryConsent`).
-    // `crashlyticsSharingEnabled` is the Crashlytics gate: `nil` means enabled,
-    // only an explicit `false` opts out.
+    // `crashlyticsSharingEnabled` is the Crashlytics gate (opt-in): `nil` means
+    // disabled, only an explicit `true` enables Crashlytics.
     @PersistedProperty(key: "crashlyticsSharingEnabled") var crashlyticsSharingEnabled: Bool?
     @PersistedProperty(key: "telemetrySharingEnabled") var telemetrySharingEnabled: Bool?
     // "Not Now" on the Home usage data prompt hides it until this date.

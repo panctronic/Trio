@@ -13,10 +13,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject, UNUserNoti
         _: UIApplication,
         didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // Default to `true` if the key doesn't exist — Trio is opt-out, not opt-in.
-        // Read before touching Firebase: an explicit opt-out means we never
-        // configure it, so no component can queue or upload anything.
-        let crashReportingEnabled: Bool = PropertyPersistentFlags.shared.crashlyticsSharingEnabled ?? true
+        // Default to `false` if the key doesn't exist — Crashlytics is opt-in.
+        // Read before touching Firebase: anything other than an explicit `true` means
+        // we never configure it, so no component can queue or upload anything.
+        let crashReportingEnabled: Bool = PropertyPersistentFlags.shared.crashlyticsSharingEnabled ?? false
         CrashReportingGate.configureAtLaunch(enabled: crashReportingEnabled)
 
         return true
