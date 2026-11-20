@@ -102,6 +102,8 @@ extension Home.RootView {
                     String(localized: " g", comment: "gram of carbs")
             )
             .font(.callout).fontWeight(.bold).fontDesign(.rounded)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .overlay(alignment: .leading) {
                 Image(systemName: "fork.knife")
                     .font(.callout)
