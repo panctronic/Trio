@@ -649,7 +649,9 @@ extension Home.RootView {
             tidepoolLoginRequired: state.tidepoolLoginRequired,
             hasUnacknowledgedReleaseNotes: releaseNotesService.hasUnacknowledgedNotes,
             telemetryConsentUndecided: telemetryConsent.needsPrompt(
-                onboardingCompleted: PropertyPersistentFlags.shared.onboardingCompleted != false
+                onboardingCompleted: PropertyPersistentFlags.shared.onboardingCompleted != false,
+                snoozedUntil: telemetryConsentSnoozedUntil,
+                now: state.timerDate
             ),
             nightscoutCredentialsMissing: state.nightscoutCredentialsMissing,
             dosingMode: state.dosingMode,

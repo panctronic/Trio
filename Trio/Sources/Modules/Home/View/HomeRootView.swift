@@ -38,6 +38,7 @@ extension Home {
         /// Usage data sharing choice; `.undecided` shows the one-time consent banner. Re-read on appear, since
         /// App Diagnostics can change it.
         @State var telemetryConsent = TelemetryConsent.current
+        @State var telemetryConsentSnoozedUntil = PropertyPersistentFlags.shared.telemetryConsentSnoozedUntil
         @State var showTelemetryConsent = false
         @ObservedObject var releaseNotesService = ReleaseNotesService.shared
         // Pull-down-to-force-loop (see HomeRootView+Refresh.swift)
@@ -330,11 +331,19 @@ extension Home {
             .sheet(isPresented: $showSnoozeSheet) {
                 SnoozeAlertsSheetView(resolver: resolver, isPresented: $showSnoozeSheet)
             }
-            .onAppear { telemetryConsent = .current }
+            .onAppear {
+                telemetryConsent = .current
+                telemetryConsentSnoozedUntil = PropertyPersistentFlags.shared.telemetryConsentSnoozedUntil
+            }
             .sheet(isPresented: $showTelemetryConsent) {
                 TelemetryConsentSheet { granted in
                     TelemetryClient.recordConsent(granted)
                     telemetryConsent = .current
+                } onNotNow: {
+                    PropertyPersistentFlags.shared.telemetryConsentSnoozedUntil = Date()
+                        .addingTimeInterval(TelemetryConsent.promptSnooze)
+                    telemetryConsent = .current
+                    telemetryConsentSnoozedUntil = PropertyPersistentFlags.shared.telemetryConsentSnoozedUntil
                 }
             }
             .sheet(isPresented: $showReleaseNotes) {

@@ -33,10 +33,11 @@ struct TelemetryConsentExplanation: View {
     }
 }
 
-/// One-time, dismissible prompt for users who set Trio up before usage data sharing became opt-in. Closing it with
-/// "Not Now" records nothing, so nothing is sent and the Home banner that opened it stays until the user chooses.
+/// One-time, dismissible prompt for users who set Trio up before usage data sharing became opt-in. "Not Now" records
+/// no choice, so nothing is sent; it puts the Home banner that opened it away for a while (`onNotNow`).
 struct TelemetryConsentSheet: View {
     let onChoice: (Bool) -> Void
+    let onNotNow: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -70,7 +71,10 @@ struct TelemetryConsentSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Not Now") { dismiss() }
+                    Button("Not Now") {
+                        onNotNow()
+                        dismiss()
+                    }
                 }
             }
         }

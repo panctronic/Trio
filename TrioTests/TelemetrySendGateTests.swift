@@ -272,6 +272,32 @@ import Testing
         #expect(!TelemetryConsent.optedOut.needsPrompt(onboardingCompleted: true))
     }
 
+    @Test("Opting out deletes the install ID") func optOutDeletesInstallID() {
+        let flags = PropertyPersistentFlags.shared
+        let previousConsent = flags.telemetrySharingEnabled
+        let previousID = flags.telemetryInstallId
+        defer {
+            flags.telemetrySharingEnabled = previousConsent
+            flags.telemetryInstallId = previousID
+        }
+        flags.telemetryInstallId = "install-to-forget"
+        TelemetryClient.recordConsent(false)
+        #expect(flags.telemetrySharingEnabled == false)
+        #expect(flags.telemetryInstallId == nil)
+    }
+
+    @Test("\"Not Now\" puts the prompt away for a week") func consentPromptSnooze() {
+        let snoozedUntil = now.addingTimeInterval(TelemetryConsent.promptSnooze)
+        #expect(!TelemetryConsent.undecided.needsPrompt(onboardingCompleted: true, snoozedUntil: snoozedUntil, now: now))
+        #expect(!TelemetryConsent.undecided.needsPrompt(
+            onboardingCompleted: true,
+            snoozedUntil: snoozedUntil,
+            now: snoozedUntil.addingTimeInterval(-1)
+        ))
+        #expect(TelemetryConsent.undecided.needsPrompt(onboardingCompleted: true, snoozedUntil: snoozedUntil, now: snoozedUntil))
+        #expect(TelemetryConsent.promptSnooze == 7 * 24 * 60 * 60)
+    }
+
     @Test("Usage data settings show telemetry as off until the user opts in") func diagnosticsOptionReflectsConsent() {
         #expect(DiagnosticsSharingOption(crashlyticsEnabled: true, telemetryEnabled: TelemetryConsent(flag: nil).allowsSending) ==
             .crashOnly)
