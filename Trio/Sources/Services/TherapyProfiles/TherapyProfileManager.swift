@@ -14,6 +14,8 @@ enum TherapyProfileError: Error, LocalizedError, Equatable {
     case cannotRenameDefault
     case noPump
     case pumpSyncFailed(String)
+    /// The pump did not answer a basal schedule write in time; it may still apply it.
+    case pumpSyncUncertain
     case pumpSuspended
     case pumpRestoreFailed(pumpProfile: String, liveProfile: String)
     case storageFailed
@@ -47,6 +49,10 @@ enum TherapyProfileError: Error, LocalizedError, Equatable {
             return String(localized: "No pump is connected, so the basal rates cannot be sent to the pump.")
         case let .pumpSyncFailed(reason):
             return String(localized: "The pump did not accept the basal rates: \(reason)")
+        case .pumpSyncUncertain:
+            return String(
+                localized: "The pump did not confirm the basal rates in time. They may have been applied; Trio sends the basal rates of the active profile again once the pump answers."
+            )
         case .pumpSuspended:
             return String(localized: "Insulin delivery is suspended. Resume delivery before changing the basal rates.")
         case let .pumpRestoreFailed(pumpProfile, liveProfile):
@@ -197,6 +203,10 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     /// The stored profiles as this manager last loaded or stored them. Every change of the stored profiles goes through this
     /// manager, so the getters read these.
     private var storedProfiles: StoredTherapyProfiles?
+    private let pumpScheduleLock = NSLock()
+    private var unconfirmedPumpSchedule = false
+    /// Timed-out writes still running; each reconciles when it finishes.
+    private var abandonedPumpWrites = 0
 
     /// Tests pass `syncBasalSchedule`, `basalLimits`, `pumpSuspended`, `bolusInProgress` and `recompute` in place of the
     /// pump and the determination.
@@ -701,7 +711,10 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     func runDueScheduledSwitch(inLoop: Bool) async {
         let run: ScheduledSwitchRun
         do {
-            run = try await serializer.run { try await self.runDueScheduledSwitchStep() }
+            run = try await serializer.run {
+                try? await self.reconcilePumpScheduleStep()
+                return try await self.runDueScheduledSwitchStep()
+            }
         } catch {
             warning(.settings, "Running the scheduled profile switch failed", error: error)
             return
@@ -912,12 +925,66 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     /// would otherwise hold every profile change, and the loop that runs a scheduled switch, forever.
     static let pumpSyncTimeout: TimeInterval = 45
 
+    /// Writes a basal schedule to the pump, giving up after `pumpSyncTimeout`. A write given up on keeps running and
+    /// may still land, so the pump could end up holding a schedule Trio does not use: the schedule then counts as
+    /// unconfirmed, and once that write finishes either way the active profile's schedule is sent again.
     private func syncBasalSchedule(_ entries: [BasalProfileEntry]) async throws {
-        try await withTimeout(seconds: pumpSyncTimeoutOverride?() ?? Self.pumpSyncTimeout) { [self] in
+        let write = Task { [self] in
             if let syncBasalScheduleOverride {
                 return try await syncBasalScheduleOverride(entries)
             }
             try await syncPumpBasalSchedule(entries)
+        }
+        do {
+            try await withTimeout(seconds: pumpSyncTimeoutOverride?() ?? Self.pumpSyncTimeout) { try await write.value }
+        } catch is AsyncTimeoutError {
+            warning(.settings, "Pump did not answer a basal schedule write in time, it may still apply it")
+            pumpScheduleLock.withLock {
+                unconfirmedPumpSchedule = true
+                abandonedPumpWrites += 1
+            }
+            Task.detached(priority: .utility) { [weak self] in
+                _ = try? await write.value
+                guard let self else { return }
+                self.pumpScheduleLock.withLock { self.abandonedPumpWrites -= 1 }
+                await self.reconcilePumpSchedule()
+            }
+            throw TherapyProfileError.pumpSyncUncertain
+        }
+    }
+
+    /// Set while a basal schedule write that timed out may have changed the pump's schedule behind Trio's back.
+    private var pumpScheduleUnconfirmed: Bool {
+        get { pumpScheduleLock.withLock { unconfirmedPumpSchedule } }
+        set { pumpScheduleLock.withLock { unconfirmedPumpSchedule = newValue } }
+    }
+
+    /// Sends the active profile's basal schedule again when an earlier write may have landed late.
+    private func reconcilePumpSchedule() async {
+        guard pumpScheduleUnconfirmed else { return }
+        do {
+            try await serializer.run { try await self.reconcilePumpScheduleStep() }
+        } catch {
+            warning(.settings, "Resending the active basal schedule to the pump failed, retrying later", error: error)
+        }
+    }
+
+    /// Within a serialized operation. Leaves the flag set when the pump is suspended or the write fails, so a later run
+    /// tries again. Waits while an abandoned write is still running: it reconciles itself when it finishes, and a
+    /// new write to a pump that does not answer would only hold the caller up for another timeout.
+    private func reconcilePumpScheduleStep() async throws {
+        let (unconfirmed, abandoned) = pumpScheduleLock.withLock { (unconfirmedPumpSchedule, abandonedPumpWrites) }
+        guard unconfirmed, abandoned == 0, !isPumpSuspended else { return }
+        let state = try await loadState()
+        let live = liveProfile(named: state.activeProfileName)
+        // Cleared first: a write that times out again sets it again.
+        pumpScheduleUnconfirmed = false
+        do {
+            try await syncBasalSchedule(live.basalProfileEntries)
+            info(.settings, "Basal schedule of profile \(live.fingerprint(units: .mgdL)) sent again to the pump")
+        } catch {
+            pumpScheduleUnconfirmed = true
+            throw error
         }
     }
 

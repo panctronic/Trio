@@ -112,7 +112,17 @@ import Testing
         #expect(!context.recorder.events.contains(.recompute))
     }
 
-    @Test("A pump write that never answers times out and is retried") func pumpWriteTimesOut() async throws {
+    /// Polls `condition` for up to two seconds.
+    private func eventually(_ condition: () -> Bool) async -> Bool {
+        for _ in 0 ..< 200 {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
+    }
+
+    @Test("An unanswered pump write is retried, and once it lands late the active schedule is sent again")
+    func pumpWriteTimesOut() async throws {
         let context = try await makeContext()
         let gate = AsyncGate()
         context.recorder.pumpGate = { await gate.wait() }
@@ -122,11 +132,26 @@ import Testing
         await context.manager.runDueScheduledSwitch(inLoop: true)
         #expect(context.manager.activeProfileName == "Default")
         #expect(try await settledAt(context) == date("2026-11-13 12:00"))
+        #expect(issued(context, "pending").last?.backgroundContent.body
+            .contains(TherapyProfileError.pumpSyncUncertain.localizedDescription) == true)
 
-        await gate.open()
+        // The abandoned write to the Weekend schedule lands after all: Default's schedule is sent again.
         context.recorder.pumpGate = nil
+        await gate.open()
+        #expect(await eventually { context.recorder.pumpWrites == 2 })
+        guard case let .pump(resent, _) = context.recorder.events.filter({
+            if case .pump = $0 { return true } else { return false }
+        }).last else {
+            Issue.record("expected a pump write")
+            return
+        }
+        #expect(resent == [TherapyProfileFixtures.decimal(0.85), 1])
+
         context.recorder.now = date("2026-11-14 07:06")
-        await context.manager.runDueScheduledSwitch(inLoop: true)
+        for _ in 0 ..< 50 where context.manager.activeProfileName != "Weekend" {
+            await context.manager.runDueScheduledSwitch(inLoop: true)
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
         #expect(context.manager.activeProfileName == "Weekend")
     }
 
