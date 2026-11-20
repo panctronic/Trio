@@ -891,7 +891,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     private func performUploadGlucose() async {
         do {
             try await uploadGlucose(glucoseStorage.getGlucoseNotYetUploadedToNightscout())
-            try await uploadNonCoreDataTreatments(glucoseStorage.getCGMStateNotYetUploadedToNightscout())
+            let cgmState = try await glucoseStorage.getCGMStateNotYetUploadedToNightscout()
+            if await uploadNonCoreDataTreatments(cgmState) {
+                await glucoseStorage.markCGMStateUploadedToNightscout(cgmState)
+            }
         } catch {
             warning(.nightscout, "Failed to load pending glucose for upload", error: error)
         }

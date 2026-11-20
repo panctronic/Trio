@@ -20,6 +20,7 @@ protocol GlucoseStorage {
     func getGlucoseForAlgorithm(shouldSmoothGlucose: Bool, fetchHours: Decimal) async throws -> [BloodGlucose]
     func getGlucoseNotYetUploadedToNightscout() async throws -> [BloodGlucose]
     func getCGMStateNotYetUploadedToNightscout() async throws -> [NightscoutTreatment]
+    func markCGMStateUploadedToNightscout(_ treatments: [NightscoutTreatment]) async
     func getGlucoseNotYetUploadedToHealth() async throws -> [BloodGlucose]
     func getManualGlucoseNotYetUploadedToHealth() async throws -> [BloodGlucose]
     func getGlucoseNotYetUploadedToTidepool() async throws -> [StoredGlucoseSample]
@@ -590,6 +591,22 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
 
         let (alreadyUploadedValues, allValuesSet) = await (alreadyUploaded, allValues)
         return Array(Set(allValuesSet).subtracting(Set(alreadyUploadedValues)))
+    }
+
+    /// Records sensor-change treatments as uploaded so the next glucose upload pass skips them.
+    /// The uploaded list is trimmed to what is still in the CGM state file (which keeps 30 days),
+    /// so it can't grow without bound. Treatments are matched by `createdAt`.
+    func markCGMStateUploadedToNightscout(_ treatments: [NightscoutTreatment]) async {
+        guard treatments.isNotEmpty else { return }
+        async let alreadyUploaded: [NightscoutTreatment] = storage
+            .retrieveAsync(OpenAPS.Nightscout.uploadedCGMState, as: [NightscoutTreatment].self) ?? []
+        async let allValues: [NightscoutTreatment] = storage
+            .retrieveAsync(OpenAPS.Monitor.cgmState, as: [NightscoutTreatment].self) ?? []
+
+        let (alreadyUploadedValues, allValuesList) = await (alreadyUploaded, allValues)
+        let uploaded = Set(alreadyUploadedValues).union(treatments).intersection(Set(allValuesList))
+        let sorted = uploaded.sorted { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) }
+        await storage.saveAsync(sorted, as: OpenAPS.Nightscout.uploadedCGMState)
     }
 
     // Fetch glucose that is not uploaded to Nightscout yet
