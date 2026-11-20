@@ -31,6 +31,10 @@ Measured on 2026-11-20 with Xcode's Swift 6.x toolchain:
 | targeted           |          405 |                  364 |
 | complete           |         1750 |                 1709 |
 
+After phase 1 (watch and Live Activity targets in Swift 6, constant
+`static let`s, lock cleanups): `complete` reports 1662 warnings, 1621 of
+them concurrency-related, none in the three Swift 6 targets.
+
 Concurrency warnings under `complete`, by directory:
 
 | Directory                  | Warnings |
