@@ -77,6 +77,7 @@ private struct BolusOverrideConfirmationView: View {
 
     @State private var confirmationProgress: Double = 0
     @FocusState private var isCrownFocused: Bool
+    @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverEnabled
 
     var body: some View {
         let bolusAmount = Double(truncating: pendingBolusOverride.amount as NSNumber)
@@ -101,8 +102,25 @@ private struct BolusOverrideConfirmationView: View {
             ProgressView(value: confirmationProgress, total: 1.0)
                 .tint(confirmationProgress >= 1.0 ? .orange : .gray)
                 .padding(.horizontal)
+                // always the slower step, like the crown here
+                .bolusConfirmationAccessibility(
+                    progress: $confirmationProgress,
+                    step: BolusConfirmationView.voiceOverConfirmationStep(confirmBolusFaster: false),
+                    hint: String(
+                        localized: "Swipe up repeatedly to fill the bar and bolus anyway. Swipe down to step back.",
+                        comment: "Accessibility hint for the watch bar that confirms a bolus despite a safety warning"
+                    )
+                )
 
-            Text("To bolus anyway, dial crown.").font(.footnote)
+            Text(
+                isVoiceOverEnabled
+                    ? String(
+                        localized: "To bolus anyway, swipe up on the bar until it is full.",
+                        comment: "Watch bolus override confirmation with VoiceOver"
+                    )
+                    : String(localized: "To bolus anyway, dial crown.")
+            )
+            .font(.footnote)
 
             Button("Cancel") {
                 state.pendingBolusOverride = nil

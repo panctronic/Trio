@@ -9,6 +9,7 @@ struct BolusConfirmationView: View {
     @Binding var confirmationProgress: Double
 
     @FocusState private var isCrownFocused: Bool
+    @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverEnabled
 
     var trioBackgroundColor = LinearGradient(
         gradient: Gradient(colors: [Color.bgDarkBlue, Color.bgDarkerDarkBlue]),
@@ -46,8 +47,22 @@ struct BolusConfirmationView: View {
             ProgressView(value: confirmationProgress, total: 1.0)
                 .tint(confirmationProgress >= 1.0 ? .loopGreen : .gray)
                 .padding(.horizontal)
+                // VoiceOver uses the crown for navigation, so the bar fills with swipes instead
+                .bolusConfirmationAccessibility(
+                    progress: $confirmationProgress,
+                    step: Self.voiceOverConfirmationStep(confirmBolusFaster: state.confirmBolusFaster),
+                    hint: String(
+                        localized: "Swipe up repeatedly to fill the bar and enact the bolus. Swipe down to step back.",
+                        comment: "Accessibility hint for the watch bolus confirmation bar"
+                    )
+                )
 
-            Text("To confirm, dial crown.").font(.footnote)
+            Text(
+                isVoiceOverEnabled
+                    ? String(localized: "To confirm, swipe up on the bar until it is full.", comment: "Watch bolus confirmation with VoiceOver")
+                    : String(localized: "To confirm, dial crown.")
+            )
+            .font(.footnote)
 
             Spacer()
 
@@ -106,6 +121,12 @@ struct BolusConfirmationView: View {
 }
 
 extension BolusConfirmationView {
+    /// How far one VoiceOver swipe fills the confirmation bar: four deliberate swipes, or two with "confirm bolus faster",
+    /// matching the two crown detents that setting asks for. One swipe on its own can never confirm.
+    static func voiceOverConfirmationStep(confirmBolusFaster: Bool) -> Double {
+        confirmBolusFaster ? 0.5 : 0.25
+    }
+
     /// SF Symbol shown in the toolbar to hint which way to turn the Digital Crown to confirm the bolus.
     ///
     /// watchOS measures crown turns relative to the screen, so the turn that fills the confirmation bar depends only on
@@ -116,5 +137,30 @@ extension BolusConfirmationView {
         crownOrientation: WKInterfaceDeviceCrownOrientation
     ) -> String {
         crownOrientation == .right ? "digitalcrown.arrow.clockwise.fill" : "digitalcrown.arrow.counterclockwise.fill"
+    }
+}
+
+extension View {
+    /// Makes a bolus confirmation bar usable with VoiceOver, which keeps the Digital Crown for itself: the bar reads as
+    /// "Bolus confirmation, 25 percent" and fills by `step` per swipe up (back down per swipe down). The bar's own
+    /// `onChange` then sends the bolus at 100 percent exactly as it does for the crown, so it still takes several
+    /// deliberate gestures and a single tap does nothing.
+    func bolusConfirmationAccessibility(progress: Binding<Double>, step: Double, hint: String) -> some View {
+        accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Bolus confirmation", comment: "Accessibility label for the watch bolus confirmation bar"))
+            .accessibilityValue(Text(progress.wrappedValue.formatted(.percent.precision(.fractionLength(0)))))
+            .accessibilityHint(Text(hint))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    progress.wrappedValue = min(1.0, progress.wrappedValue + step)
+                case .decrement:
+                    // a full bar has already sent the bolus; stepping back would only confuse
+                    guard progress.wrappedValue < 1.0 else { return }
+                    progress.wrappedValue = max(0.0, progress.wrappedValue - step)
+                @unknown default:
+                    break
+                }
+            }
     }
 }

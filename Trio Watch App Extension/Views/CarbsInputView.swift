@@ -21,6 +21,23 @@ struct CarbsInputView: View {
         endPoint: .bottom
     )
 
+    private func decrementCarbs() {
+        if carbsAmount > 0 {
+            carbsAmount < 5 ? carbsAmount = 0 : (carbsAmount -= 5)
+        }
+    }
+
+    private func incrementCarbs() {
+        carbsAmount = min(effectiveCarbsLimit, carbsAmount + 5)
+    }
+
+    /// "20 grams", plus a warning once the carb limit is reached
+    private var carbsSpokenValue: String {
+        let amount = String(format: "%.0f", carbsAmount) + " " + String(localized: "grams", comment: "Grams unit")
+        guard carbsAmount > 0.0, carbsAmount >= effectiveCarbsLimit else { return amount }
+        return amount + ", " + String(localized: "Carbs Limit Reached!")
+    }
+
     var body: some View {
         let buttonLabel = continueToBolus ? String(localized: "Proceed", comment: "Button Label to Proceed to Bolus on Watch") :
             String(localized: "Log Carbs", comment: "Button Label to Log Carbs on Watch")
@@ -31,17 +48,15 @@ struct CarbsInputView: View {
 
             HStack {
                 // "-" Button
-                Button(action: {
-                    if carbsAmount > 0 {
-                        carbsAmount < 5 ? carbsAmount = 0 : (carbsAmount -= 5)
-                    }
-                }) {
+                Button(action: decrementCarbs) {
                     Image(systemName: "minus.circle.fill")
                         .font(.title3)
                         .tint(.orange)
                 }
                 .buttonStyle(.borderless)
                 .disabled(carbsAmount <= 0)
+                .accessibilityLabel(Text("Decrease carbs"))
+                .accessibilityHint(Text("Subtracts 5 grams", comment: "Accessibility hint for the watch carbs minus button"))
 
                 Spacer()
 
@@ -61,25 +76,38 @@ struct CarbsInputView: View {
                         isContinuous: false,
                         isHapticFeedbackEnabled: true
                     )
+                    // VoiceOver takes over the crown, so the amount itself is adjustable with swipes
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("Carbohydrates"))
+                    .accessibilityValue(Text(carbsSpokenValue))
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: incrementCarbs()
+                        case .decrement: decrementCarbs()
+                        @unknown default: break
+                        }
+                    }
 
                 Spacer()
 
                 // "+" Button
-                Button(action: {
-                    carbsAmount = min(effectiveCarbsLimit, carbsAmount + 5)
-                }) {
+                Button(action: incrementCarbs) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                         .tint(.orange)
                 }
                 .buttonStyle(.borderless)
                 .disabled(carbsAmount >= effectiveCarbsLimit)
+                .accessibilityLabel(Text("Increase carbs"))
+                .accessibilityHint(Text("Adds 5 grams", comment: "Accessibility hint for the watch carbs plus button"))
             }.padding(.horizontal)
 
             Text("Carbohydrates")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .padding(.bottom)
+                // already spoken as the label of the amount above
+                .accessibilityHidden(true)
 
             Spacer()
 

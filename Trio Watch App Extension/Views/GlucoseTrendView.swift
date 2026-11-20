@@ -114,6 +114,43 @@ struct GlucoseTrendView: View {
         }
     }
 
+    /// Spoken trend for the CGM direction the phone sends ("SingleUp", "Flat", ...).
+    private var spokenTrend: String? {
+        switch state.trend {
+        case "DoubleUp",
+             "TripleUp":
+            return String(localized: "rising quickly", comment: "Accessibility: glucose trend")
+        case "SingleUp":
+            return String(localized: "rising", comment: "Accessibility: glucose trend")
+        case "FortyFiveUp":
+            return String(localized: "rising slowly", comment: "Accessibility: glucose trend")
+        case "Flat":
+            return String(localized: "steady", comment: "Accessibility: glucose trend")
+        case "FortyFiveDown":
+            return String(localized: "falling slowly", comment: "Accessibility: glucose trend")
+        case "SingleDown":
+            return String(localized: "falling", comment: "Accessibility: glucose trend")
+        case "DoubleDown",
+             "TripleDown":
+            return String(localized: "falling quickly", comment: "Accessibility: glucose trend")
+        default:
+            return nil
+        }
+    }
+
+    /// "Glucose 120, rising, delta +3", or "Glucose unavailable" when the data is stale.
+    private var glucoseAccessibilityLabel: String {
+        guard !isWatchStateDated, state.currentGlucose != "--" else {
+            return String(localized: "Glucose unavailable", comment: "Accessibility: no fresh glucose")
+        }
+        var parts = [String(localized: "Glucose", comment: "Accessibility: glucose label") + " " + state.currentGlucose]
+        if let trend = spokenTrend { parts.append(trend) }
+        if let delta = state.delta, delta != "--", !delta.isEmpty {
+            parts.append(String(localized: "delta", comment: "Accessibility: glucose delta") + " " + delta)
+        }
+        return parts.joined(separator: ", ")
+    }
+
     var body: some View {
         VStack {
             ZStack {
@@ -145,6 +182,9 @@ struct GlucoseTrendView: View {
                     }
                 }
             }
+            // one element for value, trend and delta, instead of "--" fragments and an unlabelled arrow
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(glucoseAccessibilityLabel))
 
             Spacer()
 
