@@ -42,25 +42,25 @@ struct SyncBacklogCounter {
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .overrides,
                     entityName: "OverrideStored",
                     predicate: .lastActiveAdjustmentNotYetUploadedToNightscout,
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .overrides,
                     entityName: "OverrideRunStored",
                     predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .tempTargets,
                     entityName: "TempTargetStored",
                     predicate: .lastActiveAdjustmentNotYetUploadedToNightscout,
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .tempTargets,
                     entityName: "TempTargetRunStored",
                     predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"
@@ -166,6 +166,8 @@ struct SyncBacklogCounter {
         }
         guard let counted else { return nil }
 
+        let latestDetermination = destination == .nightscout ? await Self.latestDetermination(in: context) : nil
+
         let deletions = await PendingDeletionQueue(
             storage: fileStorage,
             file: Self.pendingDeletionsFile(for: destination),
@@ -176,8 +178,27 @@ struct SyncBacklogCounter {
             pendingByKind: counted.byKind,
             oldestPending: counted.oldest,
             pendingDeletions: deletions.count,
-            oldestPendingDeletion: deletions.map(\.queuedAt).min()
+            oldestPendingDeletion: deletions.map(\.queuedAt).min(),
+            latestDetermination: latestDetermination
         )
+    }
+
+    /// When the loop last made a determination (looking back a day), or `nil`.
+    private static func latestDetermination(in context: NSManagedObjectContext) async -> Date? {
+        await context.perform {
+            let request = NSFetchRequest<NSDictionary>(entityName: "OrefDetermination")
+            request.predicate = NSPredicate.predicateForDeliverAtBetween(start: Date.oneDayAgo, end: Date.distantFuture)
+            request.sortDescriptors = [NSSortDescriptor(key: "deliverAt", ascending: false)]
+            request.fetchLimit = 1
+            request.resultType = .dictionaryResultType
+            request.propertiesToFetch = ["deliverAt"]
+            do {
+                return try context.fetch(request).first?["deliverAt"] as? Date
+            } catch {
+                warning(.storage, "Reading the latest determination for the sync status failed", error: error)
+                return nil
+            }
+        }
     }
 
     private static func countRequest(_ query: PendingQuery) -> NSFetchRequest<NSFetchRequestResult> {

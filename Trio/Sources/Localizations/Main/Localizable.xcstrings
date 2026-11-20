@@ -1200,9 +1200,6 @@
     "Oldest waiting" : {
       "comment" : "Sync status: label for the age of the oldest record not yet uploaded"
     },
-    "Overrides and Temp Targets" : {
-      "comment" : "Sync status data kind"
-    },
     "Records that could not be uploaded are retried for %lld days (Nightscout) or %lld days (Tidepool and Apple Health). Older records are not uploaded." : {
       "comment" : "Sync status footer; the numbers are the upload retry windows in days"
     },
@@ -1373,6 +1370,9 @@
     },
     "Trio can send the Trio team a small, anonymous usage report once a day. It helps the team see which app versions, devices, pumps and CGMs are in use, so testing and support can focus on what people actually run." : {
       "comment" : "Usage data sharing explanation"
+    },
+    "Trio is not allowed to write this data to Apple Health. Check the permissions in the Health app." : {
+      "comment" : "Sync status: Apple Health write permission is missing for a kind of data"
     },
     "Trio is not allowed to write to Apple Health. Check the permissions in the Health app." : {
       "comment" : "Sync status: why Apple Health uploads cannot run"
