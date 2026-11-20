@@ -1097,13 +1097,29 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "updateCarbsAsUploaded"
         await context.perform {
-            let ids = treatments.map(\.id) as NSArray
+            let ids = treatments.compactMap { $0.id.flatMap(UUID.init(uuidString:)) }
+            // Carb equivalents are sent with their meal's fpuID as `id`, so their own row ids never
+            // match; they are identified by fpuID and date instead.
+            let sentEquivalents = Set(treatments.compactMap { treatment -> String? in
+                guard let id = treatment.id, let date = treatment.createdAt else { return nil }
+                return "\(id.lowercased())|\(date.timeIntervalSince1970)"
+            })
             let fetchRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "id IN %@", ids)
+            fetchRequest.predicate = NSPredicate(
+                format: "id IN %@ OR (isFPU == YES AND fpuID IN %@)",
+                ids as NSArray,
+                ids as NSArray
+            )
 
             do {
                 let results = try context.fetch(fetchRequest)
                 for result in results {
+                    if result.isFPU, let fpuID = result.fpuID, let date = result.date,
+                       !(result.id.map(ids.contains) ?? false)
+                    {
+                        let key = "\(fpuID.uuidString.lowercased())|\(date.timeIntervalSince1970)"
+                        guard sentEquivalents.contains(key) else { continue }
+                    }
                     result.isUploadedToNS = true
                 }
 

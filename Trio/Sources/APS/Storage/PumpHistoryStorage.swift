@@ -486,7 +486,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.pumpResume.rawValue:
                     return NightscoutTreatment(
@@ -505,7 +507,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.rewind.rawValue:
                     return NightscoutTreatment(
@@ -524,7 +528,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.siteChange.rawValue:
                     return NightscoutTreatment(
@@ -543,7 +549,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.pumpAlarm.rawValue:
                     return NightscoutTreatment(
@@ -562,7 +570,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
 
                 default:
