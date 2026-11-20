@@ -124,7 +124,21 @@ jobs:
 
   bump-dev-version:
     name: Bump APP_DEV_VERSION
-    if: github.repository_owner == 'nightscout' && github.event_name == 'push'
+    # Only bump once the unit tests for this push have passed. `always()` keeps
+    # the job eligible when unit-tests was skipped because the push touched no
+    # code (docs/workflows only); a failed or cancelled test run blocks the bump.
+    needs: [changes, unit-tests]
+    if: >-
+      always() &&
+      github.repository_owner == 'nightscout' &&
+      github.event_name == 'push' &&
+      needs.changes.result == 'success' &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
+    # Waiting for the tests means two pushes can finish close together; never
+    # run two bumps at once, or the second one's push would be rejected.
+    concurrency:
+      group: bump-dev-version
+      cancel-in-progress: false
     uses: ./.github/workflows/auto_version_dev.yml
     secrets:
       TRIO_TOKEN_AUTOBUMP: ${{ secrets.TRIO_TOKEN_AUTOBUMP }}
