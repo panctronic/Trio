@@ -434,23 +434,17 @@ extension BaseTidepoolManager {
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "uploadDose"
             // Fetch the temp basal entries around the events being uploaded
-            let results = try await CoreDataStack.shared.fetchEntitiesAsync(
-                ofType: PumpEventStored.self,
-                onContext: context,
-                // the events can be up to the upload window old, not just from the last day
-                predicate: NSPredicate.tempBasalsAround(events.map(\.timestamp)),
-                key: "timestamp",
-                ascending: true,
-                batchSize: 50
-            )
-
             // Build the upload payloads in the task context, then upload off the queue.
-            let (insulinDoseEvents, pumpEvents): ([DoseEntry], [PersistedPumpEvent]) = try await context
-                .perform {
-                    guard let existingTempBasalEntries = results as? [PumpEventStored] else {
-                        throw CoreDataError.fetchError(function: #function, file: #file)
-                    }
-
+            let (insulinDoseEvents, pumpEvents): ([DoseEntry], [PersistedPumpEvent]) = try await CoreDataStack.shared
+                .fetchAndMap(
+                    ofType: PumpEventStored.self,
+                    onContext: context,
+                    // the events can be up to the upload window old, not just from the last day
+                    predicate: NSPredicate.tempBasalsAround(events.map(\.timestamp)),
+                    key: "timestamp",
+                    ascending: true,
+                    batchSize: 50
+                ) { existingTempBasalEntries in
                     let insulinDoseEvents: [DoseEntry] = events.reduce([]) { result, event in
                         var result = result
                         switch event.type {

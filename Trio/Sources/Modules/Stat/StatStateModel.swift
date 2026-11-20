@@ -161,7 +161,7 @@ extension Stat {
                     predicate = NSPredicate.glucoseForStatsTotal
                 }
 
-                let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+                return try await CoreDataStack.shared.fetchDictionaries(
                     ofType: GlucoseStored.self,
                     onContext: context,
                     predicate: predicate,
@@ -169,13 +169,8 @@ extension Stat {
                     ascending: false,
                     batchSize: 100,
                     propertiesToFetch: ["glucose", "objectID"]
-                )
-
-                return try await context.perform {
-                    guard let fetchedResults = results as? [[String: Any]] else {
-                        throw CoreDataError.fetchError(function: #function, file: #file)
-                    }
-                    return fetchedResults.compactMap { $0["objectID"] as? NSManagedObjectID }
+                ) { fetchedResults in
+                    fetchedResults.compactMap { $0["objectID"] as? NSManagedObjectID }
                 }
             } catch {
                 warning(.ui, "Fetching glucose for statistics failed", error: error)

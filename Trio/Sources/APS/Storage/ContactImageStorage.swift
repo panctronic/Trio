@@ -30,20 +30,14 @@ final class BaseContactImageStorage: ContactImageStorage, Injectable {
         let context = makeContext()
         context.name = "fetchContactImageEntries"
         do {
-            let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+            return try await CoreDataStack.shared.fetchAndMap(
                 ofType: ContactImageEntryStored.self,
                 onContext: context,
                 predicate: NSPredicate.all,
                 key: "hasHighContrast",
                 ascending: false
-            )
-
-            return try await context.perform {
-                guard let fetchedContactImageEntries = results as? [ContactImageEntryStored]
-                else { throw CoreDataError.fetchError(function: #function, file: #file)
-                }
-
-                return fetchedContactImageEntries.compactMap { entry in
+            ) { fetchedContactImageEntries in
+                fetchedContactImageEntries.compactMap { entry in
                     ContactImageEntry(
                         name: entry.name ?? String(localized: "No name provided"),
                         layout: ContactImageLayout(rawValue: entry.layout ?? "Default") ?? .default,

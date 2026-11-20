@@ -468,7 +468,7 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
     private func fetchGlucose(limit: Int = 2) async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchGlucose"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucose,
@@ -476,13 +476,6 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
             ascending: false,
             fetchLimit: limit
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     /// Fetches the most recent temporary basal rate from CoreData pump history.
@@ -498,7 +491,7 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
             tempBasalPredicate
         ])
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: compoundPredicate,
@@ -507,13 +500,6 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
             fetchLimit: 1,
             relationshipKeyPathsForPrefetching: ["tempBasal"]
         )
-
-        return try await context.perform {
-            guard let pumpEvents = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-            return pumpEvents.map(\.objectID)
-        }
     }
 
     /// Fetches all determinations from the last 30 minutes (no fetch limit).
@@ -522,7 +508,7 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
     private func fetchDeterminations30Min() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchDeterminations30Min"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate.predicateFor30MinAgoForDetermination,
@@ -530,13 +516,6 @@ final class BaseGarminManager: NSObject, GarminManager, Injectable {
             ascending: false,
             fetchLimit: 0 // No limit - get all determinations in 30min window
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [OrefDetermination] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     // MARK: - Watch State Setup

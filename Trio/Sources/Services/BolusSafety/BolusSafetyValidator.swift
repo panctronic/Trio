@@ -94,7 +94,8 @@ extension BolusSafetyRejection {
         case .recentBolusWithinWindow:
             return String(
                 localized:
-                "Bolus blocked: a significant bolus was delivered within the last \(BolusSafetyEvaluator.recentBolusWindowMinutes) minutes."
+                "Bolus blocked: a significant bolus was delivered recently and may not be reflected in IOB yet.",
+                comment: "Shortcut and Watch message when a bolus is blocked because a bolus delivered since the IOB was last calculated (or in the last few minutes) is at least 20% of the requested amount"
             )
         }
     }
@@ -230,7 +231,7 @@ final class BaseBolusSafetyValidator: BolusSafetyValidator, Injectable {
             PumpEventStored.EventType.bolus.rawValue,
             date as NSDate
         )
-        let results: Any = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchDictionaries(
             ofType: PumpEventStored.self,
             onContext: fetchContext,
             predicate: predicate,
@@ -238,10 +239,8 @@ final class BaseBolusSafetyValidator: BolusSafetyValidator, Injectable {
             ascending: true,
             fetchLimit: nil,
             propertiesToFetch: ["bolus.amount"]
-        )
-        guard let bolusDictionaries = results as? [[String: Any]] else {
-            throw CoreDataError.fetchError(function: #function, file: #file)
+        ) { bolusDictionaries in
+            bolusDictionaries.compactMap { ($0["bolus.amount"] as? NSNumber)?.decimalValue }.reduce(0, +)
         }
-        return bolusDictionaries.compactMap { ($0["bolus.amount"] as? NSNumber)?.decimalValue }.reduce(0, +)
     }
 }

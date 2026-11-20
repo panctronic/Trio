@@ -1,7 +1,8 @@
 import Foundation
 
 public enum SwiftNotificationCenter {
-    fileprivate static var observersDic = [String: Any]()
+    /// Only read and written on `notificationQueue`: reads with `sync`, writes with barrier blocks.
+    fileprivate nonisolated(unsafe) static var observersDic = [String: Any]()
 
     fileprivate static let notificationQueue = DispatchQueue(
         label: "com.swift.notification.center.dispatch.queue",

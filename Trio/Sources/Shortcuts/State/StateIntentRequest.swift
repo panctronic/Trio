@@ -59,14 +59,14 @@ final class StateIntentRequest: BaseIntentsRequest {
         -> (dateGlucose: Date, glucose: String, trend: String, delta: String)
     {
         do {
-            let results = try CoreDataStack.shared.fetchEntities(
+            let results = try CoreDataStack.shared.fetchObjectsAndWait(
                 ofType: GlucoseStored.self,
                 onContext: onContext,
                 predicate: NSPredicate.predicateFor30MinAgo,
                 key: "date",
                 ascending: false,
                 fetchLimit: 2
-            ) as? [GlucoseStored] ?? []
+            )
 
             guard let lastValue = results.first else { throw StateIntentError.NoBG }
 
@@ -89,14 +89,14 @@ final class StateIntentRequest: BaseIntentsRequest {
     }
 
     func getIobAndCob(onContext: NSManagedObjectContext) throws -> (iob: Double, cob: Double) {
-        let results = try CoreDataStack.shared.fetchEntities(
+        let results = try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: OrefDetermination.self,
             onContext: onContext,
             predicate: NSPredicate.enactedDetermination,
             key: "deliverAt",
             ascending: false,
             fetchLimit: 1
-        ) as? [OrefDetermination] ?? []
+        )
 
         let iobAsDouble = Double(truncating: (iobService.currentIOB ?? 0.0) as NSNumber)
         let cobAsDouble = Double(truncating: (results.first?.cob ?? 0) as NSNumber)

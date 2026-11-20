@@ -66,8 +66,6 @@ final class BaseDeviceDataManager: DeviceDataManager, Injectable {
     let manualTempBasal = PassthroughSubject<Bool, Never>()
     let suspended = PassthroughSubject<Bool, Never>()
 
-    @SyncAccess private var pumpUpdateCancellable: AnyCancellable?
-    private var pumpUpdatePromise: Future<Bool, Never>.Promise?
     @SyncAccess var loopInProgress: Bool = false
 
     var pumpManager: PumpManagerUI? {
@@ -279,17 +277,10 @@ final class BaseDeviceDataManager: DeviceDataManager, Injectable {
     }
 
     func heartbeat(date: Date) {
-        guard pumpUpdateCancellable == nil else {
-            debug(.pump, "Pump update skipped: one is already running")
-            return
-        }
-
         guard !loopInProgress else {
             debug(.pump, "Pump update skipped: loop is running")
             return
         }
-
-        func update(_: Future<Bool, Never>.Promise?) {}
 
         processQueue.safeSync {
             lastHeartBeatTime = date
@@ -314,8 +305,6 @@ final class BaseDeviceDataManager: DeviceDataManager, Injectable {
     }
 
     private func updateUpdateFinished(_ recommendsLoop: Bool) {
-        pumpUpdateCancellable = nil
-        pumpUpdatePromise = nil
         if !recommendsLoop {
             debug(.loop, "Requesting loop without fresh pump data")
         }
@@ -627,14 +616,12 @@ extension BaseDeviceDataManager: PumpManagerDelegate {
         )))
     }
 
+    /// Loops follow the heartbeat instead: `heartbeat(date:)` asks the pump for current data and
+    /// `updateUpdateFinished(_:)` requests the loop once that is done.
     func pumpManagerRecommendsLoop(_: PumpManager) {
         dispatchPrecondition(condition: .onQueue(processQueue))
         debug(.pump, "Pump recommends loop")
-        guard let promise = pumpUpdatePromise else {
-            debug(.pump, "Loop recommendation ignored: no pump update pending")
-            return
-        }
-        promise(.success(true))
+        debug(.pump, "Loop recommendation ignored: no pump update pending")
     }
 
     func startDateToFilterNewPumpEvents(for _: PumpManager) -> Date {
@@ -685,11 +672,6 @@ extension BaseDeviceDataManager: DeviceManagerDelegate {
         )
     }
 }
-
-// extension BaseDeviceDataManager: AlertPresenter {
-//    func issueAlert(_: Alert) {}
-//    func retractAlert(identifier _: Alert.Identifier) {}
-// }
 
 // MARK: Others
 

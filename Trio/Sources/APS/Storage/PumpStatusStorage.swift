@@ -68,16 +68,17 @@ final class BasePumpStatusStorage: PumpStatusStorage, Injectable {
     }
 
     private func store(_ deliveryState: PumpStatusStored.DeliveryState) {
-        let date = Date()
+        let now = Date()
 
         context.perform { [context] in
             do {
-                if let last = try context.fetch(PumpStatusStored.fetchLast()).first, last.deliveryState == deliveryState {
+                let last = try context.fetch(PumpStatusStored.fetchLast()).first
+                if let last, last.deliveryState == deliveryState {
                     return
                 }
 
                 let stored = PumpStatusStored(context: context)
-                stored.date = date
+                stored.date = Self.storedDate(now, after: last?.date)
                 stored.basalDeliveryState = deliveryState.rawValue
                 try context.save()
                 debug(.storage, "Pump status stored: \(deliveryState.rawValue)")
@@ -86,6 +87,15 @@ final class BasePumpStatusStorage: PumpStatusStorage, Injectable {
                 warning(.storage, "Saving pump status failed", error: error)
             }
         }
+    }
+
+    /// Rows are ordered by date alone, so a new row must sort after the last one. `Date()` only has microsecond
+    /// resolution and two updates can share a timestamp; with equal dates `fetchLast()` could return the older row,
+    /// and both the duplicate check and `lastPumpStatus()` would read the wrong state. Within the same second a tied or
+    /// earlier date is moved just past the last row; a larger step back (the clock was changed) is stored as is.
+    static func storedDate(_ date: Date, after lastDate: Date?) -> Date {
+        guard let lastDate, date <= lastDate, lastDate.timeIntervalSince(date) < 1 else { return date }
+        return lastDate.addingTimeInterval(0.001)
     }
 
     private func migrateLegacyStatusFile() { // FIXME: this can be removed in later releases

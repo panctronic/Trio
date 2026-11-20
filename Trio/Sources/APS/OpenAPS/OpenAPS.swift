@@ -103,7 +103,7 @@ final class OpenAPS {
     }
 
     private func fetchPumpHistoryObjectIDs(on context: NSManagedObjectContext) async throws -> [NSManagedObjectID]? {
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        try await CoreDataStack.shared.fetchObjectIDs(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpHistoryLast1440Minutes,
@@ -111,14 +111,6 @@ final class OpenAPS {
             ascending: false,
             batchSize: 50
         )
-
-        return try await context.perform {
-            guard let pumpEventResults = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return pumpEventResults.map(\.objectID)
-        }
     }
 
     private func parsePumpHistory(
@@ -185,20 +177,14 @@ final class OpenAPS {
 
     /// Detects a cold-start orphaned resume: returns the resume's object ID if it's an orphaned resume
     private func fetchOrphanedResumes(on context: NSManagedObjectContext) async throws -> [NSManagedObjectID] {
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpHistoryLast48h,
             key: "timestamp",
             ascending: true,
             batchSize: 250
-        )
-
-        return try await context.perform {
-            guard let pumpEventResultsFull = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
+        ) { pumpEventResultsFull in
             let pumpEventResults = pumpEventResultsFull
                 .filter { $0.type == EventType.pumpSuspend.rawValue || $0.type == EventType.pumpResume.rawValue }
 
@@ -801,35 +787,35 @@ final class OpenAPS {
 // Non-Async fetch methods for trio_custom_oref_variables
 extension OpenAPS {
     func fetchActiveTempTargets(on context: NSManagedObjectContext) throws -> [TempTargetStored] {
-        try CoreDataStack.shared.fetchEntities(
+        try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: TempTargetStored.self,
             onContext: context,
             predicate: NSPredicate.lastActiveTempTarget,
             key: "date",
             ascending: false,
             fetchLimit: 1
-        ) as? [TempTargetStored] ?? []
+        )
     }
 
     func fetchActiveOverrides(on context: NSManagedObjectContext) throws -> [OverrideStored] {
-        try CoreDataStack.shared.fetchEntities(
+        try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: OverrideStored.self,
             onContext: context,
             predicate: NSPredicate.lastActiveOverride,
             key: "date",
             ascending: false,
             fetchLimit: 1
-        ) as? [OverrideStored] ?? []
+        )
     }
 
     func fetchHistoricalTDDData(from date: Date, on context: NSManagedObjectContext) throws -> [[String: Any]] {
-        try CoreDataStack.shared.fetchEntities(
+        try CoreDataStack.shared.fetchDictionariesAndWait(
             ofType: TDDStored.self,
             onContext: context,
             predicate: NSPredicate(format: "date > %@ AND total > 0", date as NSDate),
             key: "date",
             ascending: true,
             propertiesToFetch: ["date", "total"]
-        ) as? [[String: Any]] ?? []
+        )
     }
 }

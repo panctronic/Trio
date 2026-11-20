@@ -147,7 +147,7 @@ final class BaseCalendarManager: CalendarManager, Injectable {
     private func getLastDetermination() async throws -> NSManagedObjectID? {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "getLastDetermination"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchDictionaries(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate.predicateFor30MinAgoForDetermination,
@@ -155,35 +155,23 @@ final class BaseCalendarManager: CalendarManager, Injectable {
             ascending: false,
             fetchLimit: 1,
             propertiesToFetch: ["timestamp", "cob", "iob", "objectID"]
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [[String: Any]] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.first?["objectID"] as? NSManagedObjectID
+        ) { fetchedResults in
+            fetchedResults.first?["objectID"] as? NSManagedObjectID
         }
     }
 
     private func fetchGlucose() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchGlucose"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchDictionaries(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.predicateFor30MinAgo,
             key: "date",
             ascending: false,
             propertiesToFetch: ["objectID", "glucose"]
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [[String: Any]] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.compactMap { $0["objectID"] as? NSManagedObjectID }
+        ) { fetchedResults in
+            fetchedResults.compactMap { $0["objectID"] as? NSManagedObjectID }
         }
     }
 

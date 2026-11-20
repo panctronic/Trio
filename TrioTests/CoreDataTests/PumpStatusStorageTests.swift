@@ -102,6 +102,17 @@ import Testing
         #expect(dates == dates.sorted())
     }
 
+    @Test("Updates within the same clock tick are dated after the last row") func testTiedDates() {
+        let last = Date()
+        #expect(BasePumpStatusStorage.storedDate(last, after: nil) == last)
+        #expect(BasePumpStatusStorage.storedDate(last.addingTimeInterval(1), after: last) == last.addingTimeInterval(1))
+        #expect(BasePumpStatusStorage.storedDate(last, after: last) > last)
+        #expect(BasePumpStatusStorage.storedDate(last.addingTimeInterval(-0.0005), after: last) > last)
+        // The clock was set back: keep the real time rather than dating rows after a future one
+        let earlier = last.addingTimeInterval(-3600)
+        #expect(BasePumpStatusStorage.storedDate(earlier, after: last) == earlier)
+    }
+
     @Test("Delivery active since the distant past is stored as inactive") func testInactive() async throws {
         storage.storePumpStatus(status(.active(Date())))
         storage.storePumpStatus(status(.active(.distantPast)))

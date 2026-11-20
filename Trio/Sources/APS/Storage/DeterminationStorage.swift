@@ -28,7 +28,7 @@ final class BaseDeterminationStorage: DeterminationStorage, Injectable {
     func fetchLastDeterminationObjectID(predicate: NSPredicate) async throws -> [NSManagedObjectID] {
         let context = makeContext()
         context.name = "fetchLastDeterminationObjectID"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: predicate,
@@ -36,13 +36,6 @@ final class BaseDeterminationStorage: DeterminationStorage, Injectable {
             ascending: false,
             fetchLimit: 1
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [OrefDetermination] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     func getForecastIDs(for determinationID: NSManagedObjectID, in context: NSManagedObjectContext) async -> [NSManagedObjectID] {
@@ -198,21 +191,16 @@ final class BaseDeterminationStorage: DeterminationStorage, Injectable {
     func fetchForecastHierarchy(for determinationID: NSManagedObjectID, in context: NSManagedObjectContext)
     async throws -> [(id: UUID, forecastID: NSManagedObjectID, forecastValueIDs: [NSManagedObjectID])]
     {
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        try await CoreDataStack.shared.fetchAndMap(
             ofType: Forecast.self,
             onContext: context,
             predicate: NSPredicate(format: "orefDetermination = %@", determinationID),
             key: "type",
             ascending: true,
             relationshipKeyPathsForPrefetching: ["forecastValues"]
-        )
-
-        // Process results entirely within a single context.perform block to avoid data races
-        return await context.perform {
-            guard let forecasts = results as? [Forecast] else { return [] }
-
+        ) { forecasts in
             // Create and return the result array entirely within this block
-            return forecasts.map { forecast in
+            forecasts.map { forecast in
                 // Use the helper property that already sorts by index
                 let sortedValues = forecast.forecastValuesArray
                 return (

@@ -69,13 +69,13 @@ import Testing
         try await storage.storeOverride(override: testOverride)
 
         // Then verify stored entries
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: OverrideStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Test Override"),
             key: "date",
             ascending: false
-        ) as? [OverrideStored]
+        ) as [OverrideStored]?
 
         #expect(storedEntries?.isEmpty == false, "Should have stored entries")
         #expect(storedEntries?.count == 1, "Should have exactly one entry")
@@ -159,13 +159,13 @@ import Testing
         try await storage.storeOverride(override: testPreset)
 
         // Get the stored preset's ObjectID
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: OverrideStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Delete Test"),
             key: "date",
             ascending: false
-        ) as? [OverrideStored]
+        ) as [OverrideStored]?
 
         guard let objectID = storedEntries?.first?.objectID else {
             throw TestError("Failed to get stored preset's ObjectID")
@@ -175,13 +175,13 @@ import Testing
         await storage.deleteOverridePreset(objectID)
 
         // Then verify deletion
-        let remainingEntries = try await coreDataStack.fetchEntitiesAsync(
+        let remainingEntries = try await coreDataStack.fetchObjects(
             ofType: OverrideStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Delete Test"),
             key: "date",
             ascending: false
-        ) as? [OverrideStored]
+        ) as [OverrideStored]?
 
         #expect(remainingEntries?.isEmpty == true, "Should have no entries after deletion")
     }

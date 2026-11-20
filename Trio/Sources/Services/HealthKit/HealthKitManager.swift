@@ -418,7 +418,7 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
         do {
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "uploadInsulin"
-            let fetchedInsulinEntries = try await CoreDataStack.shared.fetchEntitiesAsync(
+            let insulinSamples: [HKQuantitySample] = try await CoreDataStack.shared.fetchAndMap(
                 ofType: PumpEventStored.self,
                 onContext: context,
                 // the events can be up to the upload window old, not just from the last day
@@ -426,14 +426,8 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
                 key: "timestamp",
                 ascending: true,
                 batchSize: 50
-            )
-
-            var insulinSamples: [HKQuantitySample] = []
-
-            try await context.perform {
-                guard let existingTempBasalEntries = fetchedInsulinEntries as? [PumpEventStored] else {
-                    throw CoreDataError.fetchError(function: #function, file: #file)
-                }
+            ) { existingTempBasalEntries in
+                var insulinSamples: [HKQuantitySample] = []
 
                 for event in insulinEvents {
                     switch event.type {
@@ -484,6 +478,8 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
                         break
                     }
                 }
+
+                return insulinSamples
             }
 
             do {
