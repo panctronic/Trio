@@ -655,6 +655,7 @@
 		BD11A011000000000000A01A /* CGMManagerAlertOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A010000000000000A01A /* CGMManagerAlertOwnershipTests.swift */; };
 		BD11A001000000000000A00B /* TrioModalAlertSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A000000000000000A00B /* TrioModalAlertSchedulerTests.swift */; };
 		BD11A001000000000000A00C /* NotLoopingMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A000000000000000A00C /* NotLoopingMonitorTests.swift */; };
+		5AFE1A0200000000000000B1 /* LoopGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE1A0100000000000000B1 /* LoopGuardTests.swift */; };
 		BD11A001000000000000A00D /* AlertCatalogRegistryEntriesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A000000000000000A00D /* AlertCatalogRegistryEntriesTests.swift */; };
 		BD11A001000000000000A00E /* DanaKitAlertEmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A000000000000000A00E /* DanaKitAlertEmissionTests.swift */; };
 		BD11A001000000000000A00F /* MedtrumKitAlertEmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD11A000000000000000A00F /* MedtrumKitAlertEmissionTests.swift */; };
@@ -1935,6 +1936,7 @@
 		BD11A010000000000000A01A /* CGMManagerAlertOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGMManagerAlertOwnershipTests.swift; sourceTree = "<group>"; };
 		BD11A000000000000000A00B /* TrioModalAlertSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrioModalAlertSchedulerTests.swift; sourceTree = "<group>"; };
 		BD11A000000000000000A00C /* NotLoopingMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotLoopingMonitorTests.swift; sourceTree = "<group>"; };
+		5AFE1A0100000000000000B1 /* LoopGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoopGuardTests.swift; sourceTree = "<group>"; };
 		BD11A000000000000000A00D /* AlertCatalogRegistryEntriesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCatalogRegistryEntriesTests.swift; sourceTree = "<group>"; };
 		BD11A000000000000000A00E /* DanaKitAlertEmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DanaKitAlertEmissionTests.swift; sourceTree = "<group>"; };
 		BD11A000000000000000A00F /* MedtrumKitAlertEmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedtrumKitAlertEmissionTests.swift; sourceTree = "<group>"; };
@@ -3723,6 +3725,7 @@
 				BD11A000000000000000A00E /* DanaKitAlertEmissionTests.swift */,
 				BD11A000000000000000A00D /* AlertCatalogRegistryEntriesTests.swift */,
 				BD11A000000000000000A00C /* NotLoopingMonitorTests.swift */,
+				5AFE1A0100000000000000B1 /* LoopGuardTests.swift */,
 				BD11A000000000000000A00B /* TrioModalAlertSchedulerTests.swift */,
 				BD11A000000000000000A00A /* GlucoseAlertCoordinatorTests.swift */,
 				BD11A010000000000000A01A /* CGMManagerAlertOwnershipTests.swift */,
@@ -6840,6 +6843,7 @@
 				BD11A001000000000000A00E /* DanaKitAlertEmissionTests.swift in Sources */,
 				BD11A001000000000000A00D /* AlertCatalogRegistryEntriesTests.swift in Sources */,
 				BD11A001000000000000A00C /* NotLoopingMonitorTests.swift in Sources */,
+				5AFE1A0200000000000000B1 /* LoopGuardTests.swift in Sources */,
 				BD11A001000000000000A00B /* TrioModalAlertSchedulerTests.swift in Sources */,
 				BD11A001000000000000A00A /* GlucoseAlertCoordinatorTests.swift in Sources */,
 				BD11A011000000000000A01A /* CGMManagerAlertOwnershipTests.swift in Sources */,

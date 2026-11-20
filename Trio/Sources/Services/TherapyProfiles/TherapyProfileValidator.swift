@@ -75,6 +75,24 @@ enum TherapyProfileValidator {
 
     /// The reason the profile is not acceptable, or nil.
     static func validate(_ profile: TrioTherapyProfile, basalLimits: TherapyBasalLimits) -> String? {
+        problems(profile, basalLimits: basalLimits).first
+    }
+
+    /// The first problem `proposed` has that `current` does not have, or nil. Used for edits of the live settings:
+    /// an edit must not introduce a problem, but a problem the live values already have in a schedule the edit does not
+    /// touch must not block it either, or the user could fix neither schedule.
+    static func validateEdit(
+        from current: TrioTherapyProfile,
+        to proposed: TrioTherapyProfile,
+        basalLimits: TherapyBasalLimits
+    ) -> String? {
+        let existing = Set(problems(current, basalLimits: basalLimits))
+        return problems(proposed, basalLimits: basalLimits).first { !existing.contains($0) }
+    }
+
+    /// Every reason the profile is not acceptable, at most one per check, in the order `validate` reports them.
+    static func problems(_ profile: TrioTherapyProfile, basalLimits: TherapyBasalLimits) -> [String] {
+        var problems: [String] = []
         let schedules = [
             (profile.basal.map(\.seconds), String(localized: "Basal Rates")),
             (profile.carbRatio.map(\.seconds), String(localized: "Carb Ratios")),
@@ -83,12 +101,36 @@ enum TherapyProfileValidator {
         ]
         for (starts, label) in schedules {
             if let reason = validateSchedule(starts, label: label) {
-                return reason
+                problems.append(reason)
             }
         }
 
+        if let reason = validateBasalRates(profile.basal, basalLimits: basalLimits) {
+            problems.append(reason)
+        }
+        if let reason = validateValues(
+            profile.carbRatio,
+            range: TherapyProfileLimits.carbRatio,
+            label: String(localized: "Carb Ratio")
+        ) {
+            problems.append(reason)
+        }
+        if let reason = validateValues(profile.sensitivity, range: TherapyProfileLimits.sensitivity, label: String(localized: "ISF")) {
+            problems.append(reason)
+        }
+        if let reason = validateValues(
+            profile.target.map { TherapyScheduleEntry(seconds: $0.seconds, value: $0.low) },
+            range: TherapyProfileLimits.target,
+            label: String(localized: "Target")
+        ) {
+            problems.append(reason)
+        }
+        return problems
+    }
+
+    private static func validateBasalRates(_ basal: [TherapyScheduleEntry], basalLimits: TherapyBasalLimits) -> String? {
         let allowedRates = basalLimits.allowedRates
-        for entry in profile.basal {
+        for entry in basal {
             let time = timeString(entry.seconds)
             let rate = entry.value.formatted()
             if entry.value <= 0 {
@@ -103,21 +145,7 @@ enum TherapyProfileValidator {
                 return String(localized: "Basal rate \(rate) U/hr at \(time) is not supported by the pump.")
             }
         }
-
-        if let reason = validateValues(
-            profile.carbRatio,
-            range: TherapyProfileLimits.carbRatio,
-            label: String(localized: "Carb Ratio")
-        )
-            ?? validateValues(profile.sensitivity, range: TherapyProfileLimits.sensitivity, label: String(localized: "ISF"))
-        {
-            return reason
-        }
-        return validateValues(
-            profile.target.map { TherapyScheduleEntry(seconds: $0.seconds, value: $0.low) },
-            range: TherapyProfileLimits.target,
-            label: String(localized: "Target")
-        )
+        return nil
     }
 
     static func validateSchedule(_ starts: [Int], label: String) -> String? {

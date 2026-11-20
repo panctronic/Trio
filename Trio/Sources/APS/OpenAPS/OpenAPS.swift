@@ -38,8 +38,13 @@ final class OpenAPS {
     }
 
     // Use the helper function for cleaner code
-    func processDetermination(_ determination: Determination, on context: NSManagedObjectContext) async {
-        await context.perform {
+    /// Saves the determination and returns the object ID of the stored record.
+    /// Throws when the save fails: the loop must not go on to enact anything in that case.
+    @discardableResult func processDetermination(
+        _ determination: Determination,
+        on context: NSManagedObjectContext
+    ) async throws -> NSManagedObjectID {
+        try await context.perform {
             let newOrefDetermination = OrefDetermination(context: context)
             newOrefDetermination.id = UUID()
             newOrefDetermination.insulinSensitivity = self.decimalToNSDecimalNumber(determination.isf)
@@ -84,20 +89,16 @@ final class OpenAPS {
                         }
                     }
             }
-        }
 
-        // First save the current Determination to Core Data
-        await attemptToSaveContext(on: context)
-    }
-
-    func attemptToSaveContext(on context: NSManagedObjectContext) async {
-        await context.perform {
             do {
-                guard context.hasChanges else { return }
                 try context.save()
             } catch {
                 warning(.storage, "Saving the determination failed", error: error)
+                // Don't leave the unsaved record in the context for a later save to pick up
+                context.rollback()
+                throw error
             }
+            return newOrefDetermination.objectID
         }
     }
 
@@ -243,6 +244,33 @@ final class OpenAPS {
         simulatedCarbsDate: Date? = nil,
         simulation: Bool = false
     ) async throws -> Determination? {
+        try await determineBasalAndStore(
+            for: dosingMode,
+            currentTemp: currentTemp,
+            supportedBasalRates: supportedBasalRates,
+            shouldSmoothGlucose: shouldSmoothGlucose,
+            clock: clock,
+            simulatedCarbsAmount: simulatedCarbsAmount,
+            simulatedBolusAmount: simulatedBolusAmount,
+            simulatedCarbsDate: simulatedCarbsDate,
+            simulation: simulation
+        ).determination
+    }
+
+    /// Runs the algorithm and, unless simulating, stores the result. Returns the determination with the
+    /// object ID of its stored record (nil when simulating), so the loop enacts exactly the record it
+    /// just produced. Throws when the record cannot be saved.
+    func determineBasalAndStore(
+        for dosingMode: DosingMode,
+        currentTemp: TempBasal,
+        supportedBasalRates: [Decimal],
+        shouldSmoothGlucose: Bool,
+        clock: Date = Date(),
+        simulatedCarbsAmount: Decimal? = nil,
+        simulatedBolusAmount: Decimal? = nil,
+        simulatedCarbsDate: Date? = nil,
+        simulation: Bool = false
+    ) async throws -> (determination: Determination, objectID: NSManagedObjectID?) {
         let context = newContext("determineBasal")
 
         // Perform asynchronous calls in parallel
@@ -357,11 +385,11 @@ final class OpenAPS {
                 }
                 storage.save(cobEntries, as: Monitor.cob)
 
-                // save to core data asynchronously
-                await processDetermination(determination, on: context)
+                let objectID = try await processDetermination(determination, on: context)
+                return (determination, objectID)
             }
 
-            return determination
+            return (determination, nil)
         } else {
             warning(.algorithm, "No determination produced\(orefDetermination == nil ? "" : ": missing delivery time")")
             throw APSError.apsError(message: "No determination data.")

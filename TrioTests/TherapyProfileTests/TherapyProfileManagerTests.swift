@@ -621,7 +621,8 @@ import Testing
             try await context.manager.saveLiveSettings(
                 expectedActiveName: base.name,
                 expectedFingerprint: base.fingerprint(units: .mgdL),
-                writesBasalSchedule: true
+                writesBasalSchedule: true,
+                proposed: nil
             ) { wrote.set() }
         }
         #expect(!wrote.value)
@@ -631,6 +632,40 @@ import Testing
             expectedFingerprint: base.fingerprint(units: .mgdL)
         ) { wrote.set() }
         #expect(wrote.value)
+    }
+
+    @Test("A live basal save above max basal is refused before anything is written") func liveSaveAboveMaxBasal() async throws {
+        let context = try await TherapyProfileTestContext.make()
+        let base = context.manager.activeProfile()
+        let tooHigh = [BasalProfileEntry(start: "00:00:00", minutes: 0, rate: 3.5)]
+
+        let wrote = LockedFlag()
+        await #expect(throws: TherapyProfileError.self) {
+            try await context.manager.saveLiveSettings(
+                expectedActiveName: base.name,
+                expectedFingerprint: base.fingerprint(units: .mgdL),
+                writesBasalSchedule: true,
+                proposed: base.replacing(basalProfile: tooHigh)
+            ) { wrote.set() }
+        }
+        #expect(!wrote.value)
+        #expect(context.liveBasal == base.basal.map(\.value))
+    }
+
+    @Test("A live edit is not blocked by a problem the live values already had elsewhere") func liveSaveKeepsExistingProblem() async throws {
+        // Live basal above max basal (e.g. max basal was lowered later); the carb ratio edit must still save.
+        let context = try await TherapyProfileTestContext.make(live: TherapyProfileFixtures.profile("Default", basal: [(0, 3.5)]))
+        let base = context.manager.activeProfile()
+        let carbRatios = TherapyProfileFixtures.profile("x", carbratio: [(0, 7)]).carbRatios
+        let fileStorage = context.fileStorage
+
+        let saved = try await context.manager.saveLiveSettings(
+            expectedActiveName: base.name,
+            expectedFingerprint: base.fingerprint(units: .mgdL),
+            writesBasalSchedule: false,
+            proposed: base.replacing(carbRatios: carbRatios)
+        ) { fileStorage.save(carbRatios, as: OpenAPS.Settings.carbRatios) }
+        #expect(saved.carbRatio.map(\.value) == [7])
     }
 
     @Test("A live save whose profiles cannot be stored keeps the live settings and says so") func liveSaveStoreFailure() async throws {
