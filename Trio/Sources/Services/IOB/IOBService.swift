@@ -6,6 +6,8 @@ import Swinject
 protocol IOBService {
     var iobPublisher: AnyPublisher<Decimal?, Never> { get }
     var currentIOB: Decimal? { get }
+    /// The most recent IOB with the time it was calculated, so safety checks can tell how old it is.
+    var currentIOBSample: (iob: Decimal, date: Date)? { get }
     var iobProjection: [IOBEntry] { get }
     func updateIOB()
 }
@@ -30,6 +32,10 @@ final class BaseIOBService: IOBService, Injectable {
     // Query the current IOB syncrhonously
     var currentIOB: Decimal? {
         lookupIOB()
+    }
+
+    var currentIOBSample: (iob: Decimal, date: Date)? {
+        lookupIOBSample()
     }
 
     // Projected IOB series from the latest loop cycle (now → +4 h, 5 min steps)
@@ -86,29 +92,31 @@ final class BaseIOBService: IOBService, Injectable {
     // Lookup IOB data from the file system and determinations core data, use the most
     // recent value
     func lookupIOB() -> Decimal? {
+        lookupIOBSample()?.iob
+    }
+
+    /// Same choice as before (the more recent of the IOB file and the latest determination), with its date.
+    private func lookupIOBSample() -> (iob: Decimal, date: Date)? {
         let iobFromFile = fileStorage.retrieve(OpenAPS.Monitor.iob, as: [IOBEntry].self)
         let iobFromFileValue = iobFromFile?.first?.iob
         let iobFromFileDate = iobFromFile?.first?.time
 
         let (iobFromDetermination, iobFromDeterminationDate) = fetchLatestDeterminationIOB()
 
-        var mostRecentIOB: Decimal?
-
-        if let iobFromFileValue = iobFromFileValue, let iobFromFileDate = iobFromFileDate {
-            if let iobFromDetermination = iobFromDetermination, let iobFromDeterminationDate = iobFromDeterminationDate {
-                if iobFromFileDate > iobFromDeterminationDate {
-                    mostRecentIOB = iobFromFileValue
-                } else {
-                    mostRecentIOB = iobFromDetermination
-                }
-            } else {
-                mostRecentIOB = iobFromFileValue
-            }
-        } else {
-            mostRecentIOB = iobFromDetermination
+        let fromFile = iobFromFileValue.flatMap { value in iobFromFileDate.map { (iob: value, date: $0) } }
+        let fromDetermination = iobFromDetermination.map { value in
+            // A determination without a date is treated as infinitely old, never as current
+            (iob: value, date: iobFromDeterminationDate ?? .distantPast)
         }
 
-        return mostRecentIOB
+        switch (fromFile, fromDetermination) {
+        case let (file?, determination?):
+            return file.date > determination.date ? file : determination
+        case let (file?, nil):
+            return file
+        case let (nil, determination):
+            return determination
+        }
     }
 
     func updateIOB() {

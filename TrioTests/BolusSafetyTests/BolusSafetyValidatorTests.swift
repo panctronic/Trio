@@ -49,6 +49,28 @@ import Testing
         #expect(result == .rejected(.iobUnavailable))
     }
 
+    @Test("Recent IOB is used as is") func testFreshIOBIsUsable() {
+        let now = Date()
+        #expect(BolusSafetyEvaluator.usableIOB((iob: 2.5, date: now.addingTimeInterval(-4 * 60)), now: now) == 2.5)
+    }
+
+    @Test("IOB older than ten minutes is treated as unavailable") func testStaleIOBIsUnavailable() {
+        let now = Date()
+        #expect(BolusSafetyEvaluator.usableIOB((iob: 2.5, date: now.addingTimeInterval(-11 * 60)), now: now) == nil)
+        #expect(BolusSafetyEvaluator.usableIOB(nil, now: now) == nil)
+    }
+
+    @Test("Stale IOB blocks the bolus") func testStaleIOBRejects() {
+        let now = Date()
+        let inputs = BolusSafetyInputs(
+            maxBolus: 10,
+            maxIOB: 10,
+            currentIOB: BolusSafetyEvaluator.usableIOB((iob: 0, date: now.addingTimeInterval(-30 * 60)), now: now),
+            totalRecentBolus: 0
+        )
+        #expect(BolusSafetyEvaluator.evaluate(bolusAmount: 1, inputs: inputs) == .rejected(.iobUnavailable))
+    }
+
     @Test("Rejects when amount would exceed max IOB") func testExceedsMaxIOB() {
         let inputs = BolusSafetyInputs(
             maxBolus: 10,

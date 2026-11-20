@@ -28,8 +28,8 @@ protocol APSManager {
     var isSuspended: Bool { get }
     /// Runs a determination outside the loop, after a treatment or adjustment changed what the
     /// algorithm reads. Waits for a loop in flight to finish first, since that loop determined
-    /// before the change landed. Concurrent calls collapse into the one already running. Algorithm
-    /// errors propagate to the caller.
+    /// before the change landed, and likewise for a standalone determination already running.
+    /// Throws if it could not run (algorithm error, or the earlier run did not finish in time).
     func determineBasalSync() async throws
     func simulateDetermineBasal(
         simulatedCarbsAmount: Decimal,
@@ -75,10 +75,11 @@ enum APSError: LocalizedError {
 // MARK: - Thread-safe loop serialization
 
 /// Ensures only one loop runs at a time via actor isolation
-private actor LoopGuard {
+actor LoopGuard {
     private var isRunning = false
     private var isDeterminingStandalone = false
     private var loopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var standaloneWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     /// Atomically checks whether a new loop can start and marks it as running if so.
     func tryStart(minInterval: TimeInterval, lastLoopDate: Date, lastLoopStartDate: Date) -> Bool {
@@ -104,17 +105,39 @@ private actor LoopGuard {
         await withCheckedContinuation { loopWaiters.append($0) }
     }
 
-    /// Claims the guard for a determination that runs outside the loop. Refuses while another one
-    /// runs, since it computes the same state. `tryStart` ignores this claim: a skipped loop has a
-    /// therapy cost, an overlapping determination only wastes work.
-    func tryStartStandaloneDetermination() -> Bool {
-        guard !isDeterminingStandalone else { return false }
+    /// Claims the guard for a determination that runs outside the loop. If another one is running it
+    /// waits for that to finish first: the running one may have read its inputs before the caller's
+    /// change landed, so the caller still needs a run of its own. Returns false if the claim could not
+    /// be made within `timeout`. `tryStart` ignores this claim: a skipped loop has a therapy cost, an
+    /// overlapping determination only wastes work.
+    func claimStandaloneDetermination(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while isDeterminingStandalone {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { return false }
+            let waiterID = UUID()
+            let woken = await withCheckedContinuation { continuation in
+                standaloneWaiters[waiterID] = continuation
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    await self?.timeOutStandaloneWaiter(waiterID)
+                }
+            }
+            guard woken else { return false }
+        }
         isDeterminingStandalone = true
         return true
     }
 
+    private func timeOutStandaloneWaiter(_ waiterID: UUID) {
+        standaloneWaiters.removeValue(forKey: waiterID)?.resume(returning: false)
+    }
+
     func finishStandaloneDetermination() {
         isDeterminingStandalone = false
+        let waiters = standaloneWaiters
+        standaloneWaiters.removeAll()
+        waiters.values.forEach { $0.resume(returning: true) }
     }
 }
 
@@ -599,9 +622,11 @@ final class BaseAPSManager: APSManager, Injectable {
 
     func determineBasalSync() async throws {
         await loopGuard.waitForLoop()
-        guard await loopGuard.tryStartStandaloneDetermination() else {
-            debug(.loop, "Standalone determination skipped: one is already running")
-            return
+        // Never return as if a fresh determination ran when it did not: callers rely on it after
+        // a bolus, carb entry or adjustment.
+        guard await loopGuard.claimStandaloneDetermination(timeout: Self.standaloneDeterminationWait) else {
+            warning(.loop, "Standalone determination not run: an earlier one is still running")
+            throw APSError.apsError(message: "Another determination is still running. The next loop will update it.")
         }
         do {
             try await determineBasal()
@@ -611,6 +636,9 @@ final class BaseAPSManager: APSManager, Injectable {
         }
         await loopGuard.finishStandaloneDetermination()
     }
+
+    /// How long a standalone determination waits for one already running before giving up.
+    private static let standaloneDeterminationWait: TimeInterval = 60
 
     func simulateDetermineBasal(
         simulatedCarbsAmount: Decimal,

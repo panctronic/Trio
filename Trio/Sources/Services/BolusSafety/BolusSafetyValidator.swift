@@ -26,6 +26,7 @@ enum BolusSafetyResult: Equatable {
 
 enum BolusSafetyRejection: Equatable {
     case exceedsMaxBolus(maxBolus: Decimal)
+    /// IOB is missing, or older than `BolusSafetyEvaluator.maxIOBAge`.
     case iobUnavailable
     case exceedsMaxIOB(currentIOB: Decimal, maxIOB: Decimal)
     case recentBolusWithinWindow(totalRecent: Decimal)
@@ -42,6 +43,16 @@ struct BolusSafetyInputs: Equatable {
 enum BolusSafetyEvaluator {
     static let recentBolusThreshold: Decimal = 0.2
     static let recentBolusWindowMinutes: Int = 6
+    /// IOB older than this is treated as unknown. The loop refreshes it every five minutes, so an
+    /// older value means the loop has not been running and boluses since then may be missing from it.
+    static let maxIOBAge: TimeInterval = 10 * 60
+
+    /// The IOB value to check against, or nil when it is missing or too old to be trusted.
+    static func usableIOB(_ sample: (iob: Decimal, date: Date)?, now: Date = Date()) -> Decimal? {
+        guard let sample else { return nil }
+        guard now.timeIntervalSince(sample.date) <= maxIOBAge else { return nil }
+        return sample.iob
+    }
 
     static func evaluate(bolusAmount: Decimal, inputs: BolusSafetyInputs) -> BolusSafetyResult {
         if bolusAmount > inputs.maxBolus {
@@ -71,10 +82,18 @@ final class BaseBolusSafetyValidator: BolusSafetyValidator, Injectable {
     func validate(bolusAmount: Decimal, lookbackStart: Date?) async throws -> BolusSafetyResult {
         let windowStart = lookbackStart
             ?? Date().addingTimeInterval(-Double(BolusSafetyEvaluator.recentBolusWindowMinutes * 60))
+        let iobSample = iobService.currentIOBSample
+        let currentIOB = BolusSafetyEvaluator.usableIOB(iobSample)
+        if let iobSample, currentIOB == nil {
+            warning(
+                .bolus,
+                "Bolus check: IOB is \(Int(Date().timeIntervalSince(iobSample.date) / 60)) min old, treating it as unavailable"
+            )
+        }
         let inputs = BolusSafetyInputs(
             maxBolus: settingsManager.pumpSettings.maxBolus,
             maxIOB: settingsManager.preferences.maxIOB,
-            currentIOB: iobService.currentIOB,
+            currentIOB: currentIOB,
             totalRecentBolus: try await fetchTotalRecentBolusAmount(since: windowStart)
         )
         return BolusSafetyEvaluator.evaluate(bolusAmount: bolusAmount, inputs: inputs)
