@@ -414,7 +414,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToNightscout,
             key: "timestamp",
-            ascending: false,
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         )
 
@@ -486,7 +487,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.pumpResume.rawValue:
                     return NightscoutTreatment(
@@ -505,7 +508,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.rewind.rawValue:
                     return NightscoutTreatment(
@@ -524,7 +529,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.siteChange.rawValue:
                     return NightscoutTreatment(
@@ -543,7 +550,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
                 case PumpEvent.pumpAlarm.rawValue:
                     return NightscoutTreatment(
@@ -562,7 +571,9 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                         fat: nil,
                         protein: nil,
                         targetTop: nil,
-                        targetBottom: nil
+                        targetBottom: nil,
+                        // lets the upload mark the row; without it the note is re-sent every pass
+                        id: event.id
                     )
 
                 default:
@@ -580,7 +591,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToHealth,
             key: "timestamp",
-            ascending: false,
+            ascending: true,
+            fetchLimit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         )
 
@@ -631,7 +643,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToTidepool,
             key: "timestamp",
-            ascending: false,
+            ascending: true,
+            fetchLimit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         )
 

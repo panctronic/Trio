@@ -29,8 +29,15 @@ class NightscoutAPI {
     ]
 
     enum Error: LocalizedError {
-        case badStatusCode
+        case badStatusCode(Int)
         case missingURL
+
+        var errorDescription: String? {
+            switch self {
+            case let .badStatusCode(code): return "Nightscout responded with HTTP status \(code)"
+            case .missingURL: return "Nightscout URL is missing"
+            }
+        }
     }
 
     let url: URL
@@ -42,6 +49,36 @@ class NightscoutAPI {
 }
 
 extension NightscoutAPI {
+    /// URL components for an API endpoint. The endpoint path is appended to the path of the
+    /// configured URL, so a site served from a sub-path (e.g. `https://example.com/ns`) keeps it.
+    /// Only scheme, host, port and path are taken from the configured URL.
+    func baseComponents(path endpointPath: String) -> URLComponents {
+        var components = URLComponents()
+        components.scheme = url.scheme
+        components.host = url.host
+        components.port = url.port
+
+        var basePath = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
+        while basePath.hasSuffix("/") {
+            basePath.removeLast()
+        }
+        components.path = basePath + endpointPath
+        return components
+    }
+
+    private func requestURL(from components: URLComponents) throws -> URL {
+        guard let url = components.url else { throw URLError(.badURL) }
+        return url
+    }
+
+    /// Throws unless the response is an HTTP 2xx.
+    private func validate(_ response: URLResponse) throws {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200 ... 299).contains(statusCode) else {
+            throw Error.badStatusCode(statusCode)
+        }
+    }
+
     func checkConnection() -> AnyPublisher<Void, Swift.Error> {
         struct Check: Codable, Equatable {
             var eventType = "Note"
@@ -66,11 +103,7 @@ extension NightscoutAPI {
     }
 
     func fetchLastGlucose(sinceDate: Date? = nil) async throws -> [BloodGlucose] {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.entriesPath
+        var components = baseComponents(path: Config.entriesPath)
         components.queryItems = [URLQueryItem(name: "count", value: "\(1600)")]
         if let date = sinceDate {
             let dateItem = URLQueryItem(
@@ -91,17 +124,14 @@ extension NightscoutAPI {
             request.addValue(secret.sha1(), forHTTPHeaderField: "api-secret")
         }
 
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let glucose = try JSONCoding.decoder.decode([BloodGlucose].self, from: data)
-            return glucose.map {
-                var reading = $0
-                reading.glucose = $0.sgv ?? $0.mbg
-                return reading
-            }
-        } catch {
-            warning(.nightscout, "Glucose fetch failed", error: error)
-            return []
+        // Errors propagate so the caller can tell a failed fetch from "no new readings".
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response)
+        let glucose = try JSONCoding.decoder.decode([BloodGlucose].self, from: data)
+        return glucose.map {
+            var reading = $0
+            reading.glucose = $0.sgv ?? $0.mbg
+            return reading
         }
     }
 
@@ -115,11 +145,7 @@ extension NightscoutAPI {
     }
 
     func fetchCarbs(sinceDate: Date? = nil) async throws -> [CarbsEntry] {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
 
         var items: [URLQueryItem] = [
             URLQueryItem(name: "find[carbs][$exists]", value: "true")
@@ -136,7 +162,7 @@ extension NightscoutAPI {
             components.queryItems?.append(dateItem)
         }
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
 
         if let secret = secret {
@@ -145,9 +171,7 @@ extension NightscoutAPI {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
         let carbs = try JSONCoding.decoder.decode([CarbsEntry].self, from: data)
         return carbs
     }
@@ -169,14 +193,10 @@ extension NightscoutAPI {
 
     /// The greatest `_id` among the treatments uploaded with `id` == `localId` and created at or after `createdSince`.
     func fetchObjectId(forLocalId localId: String, createdSince: Date) async throws -> String? {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
         components.queryItems = Self.objectIdLookupQueryItems(localId: localId, createdSince: createdSince)
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
 
         if let secret = secret {
@@ -184,27 +204,20 @@ extension NightscoutAPI {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
         return NightscoutObjectIdCache.mappings(fromUploadResponse: data, localIds: [localId])
             .compactMap { NightscoutObjectId($0.objectId) }
             .max()?.value
     }
 
     func deleteCarbs(withId id: String) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
 
         components.queryItems = [
             URLQueryItem(name: "find[id][$eq]", value: id)
         ]
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
         request.httpMethod = "DELETE"
 
@@ -214,19 +227,13 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
 
         return
     }
 
     func deleteGlucose(withId id: String, withDate date: Date) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.uploadEntriesPath
+        var components = baseComponents(path: Config.uploadEntriesPath)
         components.queryItems = [
             URLQueryItem(
                 name: "find[$or][0][id][$eq]",
@@ -252,17 +259,11 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
     }
 
     func deleteInsulin(withId id: String) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
         components.queryItems = [
             URLQueryItem(name: "find[id][$eq]", value: id)
         ]
@@ -281,17 +282,11 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
     }
 
     func fetchTempTargets(sinceDate: Date? = nil) async throws -> [TempTarget] {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
 
         var items: [URLQueryItem] = [
             URLQueryItem(name: "find[eventType]", value: "Temporary+Target"),
@@ -309,7 +304,7 @@ extension NightscoutAPI {
             components.queryItems?.append(dateItem)
         }
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
 
         if let secret = secret {
@@ -318,9 +313,7 @@ extension NightscoutAPI {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
 
         let tempTargets = try JSONCoding.decoder.decode([TempTarget].self, from: data)
         return tempTargets
@@ -328,11 +321,7 @@ extension NightscoutAPI {
 
     /// - Returns: the response body, the stored treatments as Nightscout echoes them.
     @discardableResult func uploadTreatments(_ treatments: [NightscoutTreatment]) async throws -> Data {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        let components = baseComponents(path: Config.treatmentsPath)
 
         guard let requestURL = components.url else {
             throw URLError(.badURL)
@@ -349,8 +338,6 @@ extension NightscoutAPI {
         do {
             let encodedBody = try JSONCoding.encoder.encode(treatments)
             request.httpBody = encodedBody
-//            debugPrint("Payload treatments size: \(encodedBody.count) bytes")
-//            debugPrint(String(data: encodedBody, encoding: .utf8) ?? "Invalid payload")
         } catch {
             debug(.nightscout, "Encoding treatments for upload failed")
             throw error
@@ -359,23 +346,14 @@ extension NightscoutAPI {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        // Check the response status code
-        guard let httpResponse = response as? HTTPURLResponse, 200 ..< 300 ~= httpResponse.statusCode else {
-            throw URLError(.badServerResponse)
-        }
-
-//        debugPrint("Upload successful, response data: \(String(data: data, encoding: .utf8) ?? "No data")")
+        try validate(response)
         return data
     }
 
     func uploadGlucose(_ glucose: [BloodGlucose]) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.uploadEntriesPath
+        let components = baseComponents(path: Config.uploadEntriesPath)
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -385,8 +363,6 @@ extension NightscoutAPI {
         do {
             let encodedBody = try JSONCoding.encoder.encode(glucose)
             request.httpBody = encodedBody
-//            debugPrint("Payload glucose size: \(encodedBody.count) bytes")
-//            debugPrint(String(data: encodedBody, encoding: .utf8) ?? "Invalid payload")
         } catch {
             debug(.nightscout, "Encoding glucose for upload failed")
             throw error
@@ -395,22 +371,13 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        // Check the response status code
-        guard let httpResponse = response as? HTTPURLResponse, 200 ..< 300 ~= httpResponse.statusCode else {
-            throw URLError(.badServerResponse)
-        }
-
-//        debugPrint("Upload successful, response data: \(String(data: data, encoding: .utf8) ?? "No data")")
+        try validate(response)
     }
 
     func uploadDeviceStatus(_ status: NightscoutStatus) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.statusPath
+        let components = baseComponents(path: Config.statusPath)
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -421,8 +388,6 @@ extension NightscoutAPI {
         do {
             let encodedBody = try JSONCoding.encoder.encode(status)
             request.httpBody = encodedBody
-//            debugPrint("Payload status size: \(encodedBody.count) bytes")
-//            debugPrint(String(data: encodedBody, encoding: .utf8) ?? "Invalid payload")
         } catch {
             debug(.nightscout, "Encoding device status for upload failed")
             throw error
@@ -432,17 +397,11 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
     }
 
     func uploadProfile(_ profile: NightscoutProfileStore) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.profilePath
+        let components = baseComponents(path: Config.profilePath)
 
         guard let url = components.url else {
             throw URLError(.badURL)
@@ -459,8 +418,6 @@ extension NightscoutAPI {
         do {
             let encodedBody = try JSONCoding.encoder.encode(profile)
             request.httpBody = encodedBody
-//            debugPrint("Payload profile upload size: \(encodedBody.count) bytes")
-//            debugPrint(String(data: encodedBody, encoding: .utf8) ?? "Invalid payload")
         } catch {
             debug(.nightscout, "Encoding profile for upload failed")
             throw error
@@ -468,19 +425,13 @@ extension NightscoutAPI {
         request.httpMethod = "POST"
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
     }
 
     /// The delete func is needed to force re-rendering of overrides with changed durations in Nightscout main chart
     /// since just updating durations in existing entries doesn't trigger re-rendering.
     func deleteNightscoutOverride(withCreatedAt createdAt: String) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        var components = baseComponents(path: Config.treatmentsPath)
         components.queryItems = [
             URLQueryItem(name: "find[created_at][$eq]", value: createdAt),
             URLQueryItem(name: "find[eventType][$eq]", value: OverrideStored.EventType.nsExercise.rawValue)
@@ -499,22 +450,13 @@ extension NightscoutAPI {
         }
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) {
-        } else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            debug(.nightscout, "Override deletion failed with HTTP \(statusCode)")
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
     }
 
     func uploadOverrides(_ overrides: [NightscoutExercise]) async throws {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.treatmentsPath
+        let components = baseComponents(path: Config.treatmentsPath)
 
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: try requestURL(from: components))
         request.timeoutInterval = Config.timeout
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -524,8 +466,6 @@ extension NightscoutAPI {
         do {
             let encodedBody = try JSONCoding.encoder.encode(overrides)
             request.httpBody = encodedBody
-//            debugPrint("Payload glucose size: \(encodedBody.count) bytes")
-//            debugPrint(String(data: encodedBody, encoding: .utf8) ?? "Invalid payload")
         } catch {
             debug(.nightscout, "Encoding overrides for upload failed")
             throw error
@@ -534,20 +474,11 @@ extension NightscoutAPI {
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        // Check the response status code
-        guard let httpResponse = response as? HTTPURLResponse, 200 ..< 300 ~= httpResponse.statusCode else {
-            throw URLError(.badServerResponse)
-        }
-
-//        debugPrint("Upload successful, response data: \(String(data: data, encoding: .utf8) ?? "No data")")
+        try validate(response)
     }
 
     func importSettings() async throws -> FetchedNightscoutProfileStore {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.port = url.port
-        components.path = Config.profilePath
+        var components = baseComponents(path: Config.profilePath)
         components.queryItems = [URLQueryItem(name: "count", value: "1")]
 
         guard let url = components.url else {
@@ -562,11 +493,9 @@ extension NightscoutAPI {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200 ... 299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        try validate(response)
 
-        guard let mimeType = httpResponse.mimeType, mimeType == "application/json" else {
+        guard let mimeType = response.mimeType, mimeType == "application/json" else {
             throw URLError(.unsupportedURL)
         }
 

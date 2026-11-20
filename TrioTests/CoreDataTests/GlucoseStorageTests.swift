@@ -312,6 +312,71 @@ import Testing
         #expect(storage.alarm == nil, "Should not trigger any alarm")
     }
 
+    @Test("Upload queries cover each service's backlog window, oldest first") func testUploadBacklogWindows() async throws {
+        let now = Date()
+        let daysAgo: [Double] = [0.1, 2, 6, 10, 29, 35]
+        try await testContext.perform {
+            for (index, days) in daysAgo.enumerated() {
+                let entry = GlucoseStored(context: testContext)
+                entry.id = UUID()
+                entry.date = now.addingTimeInterval(-days * 24 * 3600)
+                entry.glucose = Int16(200 + index)
+                entry.isManual = false
+                entry.isUploadedToNS = false
+                entry.isUploadedToHealth = false
+                entry.isUploadedToTidepool = false
+            }
+            try testContext.save()
+        }
+
+        // Nightscout: 7 days, so the 2- and 6-day-old readings that a 24 h window missed are included.
+        let nightscout = try await storage.getGlucoseNotYetUploadedToNightscout().compactMap(\.sgv)
+        #expect(nightscout == [202, 201, 200])
+
+        // Apple Health and Tidepool: 30 days.
+        let health = try await storage.getGlucoseNotYetUploadedToHealth().compactMap(\.sgv)
+        #expect(health == [204, 203, 202, 201, 200])
+        let tidepool = try await storage.getGlucoseNotYetUploadedToTidepool()
+        #expect(tidepool.count == 5)
+        #expect(tidepool.map(\.startDate) == tidepool.map(\.startDate).sorted())
+    }
+
+    @Test("Sensor changes marked as uploaded are not offered again") func testCGMStateMarkedUploaded() async throws {
+        let fileStorage = try #require(resolver.resolve(FileStorage.self))
+        // Whole seconds, so the dates survive the JSON round trip through the files unchanged.
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded())
+        func sensorChange(_ hoursAgo: Double) -> NightscoutTreatment {
+            NightscoutTreatment(
+                duration: nil, rawDuration: nil, rawRate: nil, absolute: nil, rate: nil,
+                eventType: .nsSensorChange, createdAt: now.addingTimeInterval(-hoursAgo * 3600),
+                enteredBy: NightscoutTreatment.local, bolus: nil, insulin: nil, notes: nil,
+                carbs: nil, fat: nil, protein: nil, targetTop: nil, targetBottom: nil
+            )
+        }
+        let older = sensorChange(240)
+        let newer = sensorChange(2)
+        let expired = sensorChange(1000) // no longer in the CGM state file
+        await fileStorage.saveAsync([older, newer], as: OpenAPS.Monitor.cgmState)
+        await fileStorage.saveAsync([expired], as: OpenAPS.Nightscout.uploadedCGMState)
+        defer {
+            fileStorage.remove(OpenAPS.Monitor.cgmState)
+            fileStorage.remove(OpenAPS.Nightscout.uploadedCGMState)
+        }
+
+        #expect(try await storage.getCGMStateNotYetUploadedToNightscout().count == 2)
+
+        await storage.markCGMStateUploadedToNightscout([older])
+        let pending = try await storage.getCGMStateNotYetUploadedToNightscout()
+        #expect(pending.map(\.createdAt) == [newer.createdAt])
+
+        await storage.markCGMStateUploadedToNightscout(pending)
+        #expect(try await storage.getCGMStateNotYetUploadedToNightscout().isEmpty)
+
+        // The uploaded list only keeps entries still present in the CGM state file.
+        let uploaded = await fileStorage.retrieveAsync(OpenAPS.Nightscout.uploadedCGMState, as: [NightscoutTreatment].self)
+        #expect(uploaded?.map(\.createdAt) == [older.createdAt, newer.createdAt])
+    }
+
     /* Commenting out while we don't have getGlucoseStatus defined
      @Test("getGlucoseStatus returns correct deltas for 0/5/15/30m readings") func testGetGlucoseStatusFourPoints() async throws {
          let now = Date()

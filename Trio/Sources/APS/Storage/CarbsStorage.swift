@@ -637,7 +637,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToNightscout,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -679,7 +680,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.fpusNotYetUploadedToNightscout,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -721,7 +723,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToHealth,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -754,7 +757,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.carbsNotYetUploadedToTidepool,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {

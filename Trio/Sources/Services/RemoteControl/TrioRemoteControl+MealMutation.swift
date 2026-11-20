@@ -5,7 +5,7 @@ extension TrioRemoteControl {
     /// Scheduled meals may be dated ahead up to this limit.
     static let mealMutationMaxFuture: TimeInterval = 12 * 60 * 60
 
-    /// Meals older than one calendar day cannot be changed remotely; matches the upload window (`Date.oneDayAgo`).
+    /// Meals older than one calendar day cannot be changed remotely.
     static func validateMealAge(_ date: Date, now: Date = Date(), label: String = "meal") -> String? {
         if let oldest = Calendar.current.date(byAdding: .day, value: -1, to: now), date < oldest {
             return "Command rejected: the \(label) is older than 24 hours."

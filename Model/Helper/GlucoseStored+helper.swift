@@ -83,22 +83,22 @@ extension NSPredicate {
     }
 
     static var glucoseNotYetUploadedToNightscout: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.nightscoutUploadWindowStart
         return NSPredicate(format: "date >= %@ AND isUploadedToNS == %@", date as NSDate, false as NSNumber)
     }
 
     static var glucoseNotYetUploadedToHealth: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.appleHealthUploadWindowStart
         return NSPredicate(format: "date >= %@ AND isUploadedToHealth == %@", date as NSDate, false as NSNumber)
     }
 
     static var glucoseNotYetUploadedToTidepool: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.tidepoolUploadWindowStart
         return NSPredicate(format: "date >= %@ AND isUploadedToTidepool == %@", date as NSDate, false as NSNumber)
     }
 
     static var manualGlucoseNotYetUploadedToHealth: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.appleHealthUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToHealth == %@ AND isManual == %@",
             date as NSDate,
@@ -108,7 +108,7 @@ extension NSPredicate {
     }
 
     static var manualGlucoseNotYetUploadedToTidepool: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.tidepoolUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToTidepool == %@ AND isManual == %@",
             date as NSDate,
