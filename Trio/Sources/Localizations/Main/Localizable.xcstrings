@@ -1359,6 +1359,9 @@
     "Trio can send the Trio team a small, anonymous usage report once a day. It helps the team see which app versions, devices, pumps and CGMs are in use, so testing and support can focus on what people actually run." : {
       "comment" : "Usage data sharing explanation"
     },
+    "Trio is not allowed to write this data to Apple Health. Check the permissions in the Health app." : {
+      "comment" : "Sync status: Apple Health write permission is missing for a kind of data"
+    },
     "Trio is not allowed to write to Apple Health. Check the permissions in the Health app." : {
       "comment" : "Sync status: why Apple Health uploads cannot run"
     },

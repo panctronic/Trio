@@ -120,6 +120,12 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
         return controller
     }()
 
+    /// Shown on the Sync Status screen when Apple Health upload is on but writing a type is not allowed;
+    /// the rows then wait without a write ever being attempted.
+    static var writePermissionMissingMessage: String {
+        String(localized: "Trio is not allowed to write this data to Apple Health. Check the permissions in the Health app.")
+    }
+
     var isAvailableOnCurrentDevice: Bool {
         HKHealthStore.isHealthDataAvailable()
     }
@@ -218,9 +224,11 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     @discardableResult func uploadGlucose(_ glucose: [BloodGlucose]) async -> SyncPassOutcome {
         guard settingsManager.settings.useAppleHealth,
               let sampleType = AppleHealthConfig.healthBGObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType),
               glucose.isNotEmpty
         else { return SyncPassOutcome() }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType) else {
+            return .failure(message: Self.writePermissionMissingMessage)
+        }
 
         do {
             // Create HealthKit samples from all the passed glucose values
@@ -298,9 +306,12 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
               let carbSampleType = AppleHealthConfig.healthCarbObject,
               let fatSampleType = AppleHealthConfig.healthFatObject,
               let proteinSampleType = AppleHealthConfig.healthProteinObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: carbSampleType),
               carbs.isNotEmpty
         else { return }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: carbSampleType) else {
+            syncStatusTracker.recordFailure(.appleHealth, .carbs, message: Self.writePermissionMissingMessage)
+            return
+        }
 
         do {
             var samples: [HKQuantitySample] = []
@@ -416,8 +427,11 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     func uploadInsulin(_ insulinEvents: [PumpHistoryEvent]) async {
         guard settingsManager.settings.useAppleHealth,
               let sampleType = AppleHealthConfig.healthInsulinObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType),
               insulinEvents.isNotEmpty else { return }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType) else {
+            syncStatusTracker.recordFailure(.appleHealth, .treatments, message: Self.writePermissionMissingMessage)
+            return
+        }
 
         do {
             let context = CoreDataStack.shared.newTaskContext()
