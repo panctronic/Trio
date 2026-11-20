@@ -329,9 +329,6 @@ final class BaseAPSManager: APSManager, Injectable {
                 return
             }
 
-            // Before the loop starts, so the loop doses with the new profile.
-            await self.therapyProfileManager?.runDueScheduledSwitch()
-
             // Atomic check-and-set via actor — eliminates the race between
             // checking isLooping.value and sending isLooping(true).
             guard await loopGuard.tryStart(
@@ -362,6 +359,10 @@ final class BaseAPSManager: APSManager, Injectable {
 
             isLooping.send(true)
             info(.loop, "Loop started, mode \(settings.dosingMode.rawValue)\(userInitiated ? ", requested by user" : "")")
+
+            // Inside the loop guard and background task, before determining: the switch can't interleave with a
+            // running loop, and this loop doses with the new profile.
+            await self.therapyProfileManager?.runDueScheduledSwitch(inLoop: true)
 
             let loopStartDate = Date()
             lastLoopStartDate = loopStartDate

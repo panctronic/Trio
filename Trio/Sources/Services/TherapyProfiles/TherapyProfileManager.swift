@@ -137,11 +137,17 @@ protocol TherapyProfileManager: AnyObject {
         baseFingerprint: String?
     ) async throws -> [ScheduledProfileSwitch]
     /// Switches to the profile of the newest scheduled start that is due, and arms the alert for a start that does not
-    /// happen in time.
-    func runDueScheduledSwitch() async
+    /// happen in time. `inLoop` is true when the loop runs it before determining: the loop's own determination then
+    /// uses the new profile, so none is refreshed here (waiting for one would wait for the loop itself), and the uploads
+    /// run in the background instead of holding up the loop.
+    func runDueScheduledSwitch(inLoop: Bool) async
 }
 
 extension TherapyProfileManager {
+    func runDueScheduledSwitch() async {
+        await runDueScheduledSwitch(inLoop: false)
+    }
+
     @discardableResult func activate(_ name: String, expectedFingerprint: String?) async throws -> TrioTherapyProfile {
         try await activate(name, expectedFingerprint: expectedFingerprint, trigger: .local)
     }
@@ -640,6 +646,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
             if let reason = TherapyProfileValidator.validateScheduledSwitches(entries) {
                 throw TherapyProfileError.invalidScheduledSwitches(reason)
             }
+            let previousSwitches = state.scheduledSwitches
             state.scheduledSwitches = try entries.map { entry in
                 guard let profile = state.profile(named: entry.profileName) else {
                     throw TherapyProfileError.notFound(entry.profileName)
@@ -648,7 +655,17 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
                 entry.profileName = profile.name
                 return entry
             }.sortedByWeek
-            state.scheduledSwitchesSettledAt = self.now()
+            let now = self.now()
+            // Edits apply to starts after now, but a start that is already due and not yet done (e.g. retrying while
+            // the pump was unreachable) stays due when the edit keeps it unchanged.
+            let keepsPending = state.scheduledSwitchesSettledAt.map { settledAt in
+                guard let pending = previousSwitches.newestOccurrence(after: settledAt, upTo: now, calendar: self.calendar)
+                else { return false }
+                return state.scheduledSwitches.newestOccurrence(after: settledAt, upTo: now, calendar: self.calendar) == pending
+            } ?? false
+            if !keepsPending {
+                state.scheduledSwitchesSettledAt = now
+            }
             try await self.store(state.stored)
             return state.scheduledSwitches
         }
@@ -666,7 +683,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         case retrying(ScheduledProfileSwitchOccurrence, reason: String)
     }
 
-    func runDueScheduledSwitch() async {
+    func runDueScheduledSwitch(inLoop: Bool) async {
         let run: ScheduledSwitchRun
         do {
             run = try await serializer.run { try await self.runDueScheduledSwitchStep() }
@@ -680,7 +697,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         case let .switched(occurrence, profile, switchDate):
             info(.settings, "Scheduled switch to therapy profile \(profile.fingerprint(units: .mgdL)) done")
             issueScheduledSwitchDone(occurrence, profileName: profile.name, at: switchDate)
-            await didChange(liveSettings: profile)
+            await didChange(liveSettings: profile, inLoop: inLoop)
         case let .failed(occurrence, reason):
             warning(.settings, "Scheduled profile switch of \(occurrence.date) not done")
             issueScheduledSwitchFailed(occurrence, reason: reason)
@@ -912,7 +929,8 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     private func didChange(
         liveSettings profile: TrioTherapyProfile?,
         fromEditor: Bool = false,
-        profilesStored: Bool = true
+        profilesStored: Bool = true,
+        inLoop: Bool = false
     ) async {
         await MainActor.run {
             if let profile {
@@ -948,6 +966,18 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
             }
             Task.detached(priority: .low) { [tidepoolManager] in
                 await tidepoolManager?.uploadSettings()
+            }
+            return
+        }
+
+        if inLoop {
+            // The running loop determines next, with the new profile; uploads must not hold it up.
+            let settingsChanged = profile != nil
+            Task.detached(priority: .low) { [nightscoutManager, tidepoolManager] in
+                await nightscoutManager?.uploadTherapyProfiles()
+                if settingsChanged {
+                    await tidepoolManager?.uploadSettings()
+                }
             }
             return
         }
