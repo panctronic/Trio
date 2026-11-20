@@ -525,7 +525,13 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Returns the object ID of the stored determination this run produced.
     @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
-        try await calculateAndStoreTDD()
+        // TDD only feeds Dynamic ISF, which falls back to the stored history (and is turned off for the run when there
+        // is not enough of it), so a failed calculation must not stop the loop from dosing.
+        do {
+            try await calculateAndStoreTDD()
+        } catch {
+            warning(.loop, "Calculating the total daily dose failed, determining without updating it", error: error)
+        }
 
         var invalidGlucoseError: String?
 
