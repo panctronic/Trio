@@ -67,7 +67,11 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         // One store at a time: two overlapping Nightscout fetches could both pass filterRemoteEntries before
         // either saved, and every new remote meal was then stored twice (double COB)
         try await storeQueue.run {
-            try await self.storeSerially(entries, areFetchedFromRemote: areFetchedFromRemote, nightscoutSiteURL: nightscoutSiteURL)
+            try await self.storeSerially(
+                entries,
+                areFetchedFromRemote: areFetchedFromRemote,
+                nightscoutSiteURL: nightscoutSiteURL
+            )
         }
     }
 
@@ -310,10 +314,14 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         )
 
         if carbEquivalentCount > 0 {
-            await saveFPUToCoreDataAsBatchInsert(entries: futureCarbEquivalents, areFetchedFromRemote: areFetchedFromRemote)
+            let isSaved = await saveFPUToCoreDataAsBatchInsert(
+                entries: futureCarbEquivalents,
+                areFetchedFromRemote: areFetchedFromRemote
+            )
 
             // Equivalents of a downloaded meal are known to Nightscout through the meal's `_id`.
-            if areFetchedFromRemote, let objectId = entry.id {
+            // Recorded only once they are stored, so no mapping points at rows that do not exist.
+            if isSaved, areFetchedFromRemote, let objectId = entry.id {
                 let localIds = futureCarbEquivalents.compactMap(\.id) + [futureCarbEquivalents.first?.fpuID].compactMap { $0 }
                 NightscoutObjectIdStore.shared.record(localIds.map { ($0, objectId) }, fromSite: nightscoutSiteURL)
             }
@@ -325,12 +333,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         let context = makeContext()
         context.name = "saveCarbsToCoreData"
         try await context.perform {
-            self.insertCarbEntry(
-                entry,
-                into: context,
-                areFetchedFromRemote: areFetchedFromRemote,
-                nightscoutSiteURL: nightscoutSiteURL
-            )
+            let newItem = self.insertCarbEntry(entry, into: context, areFetchedFromRemote: areFetchedFromRemote)
 
             guard context.hasChanges else { return }
             do {
@@ -340,16 +343,21 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 context.rollback()
                 throw error
             }
+
+            // Recorded after the save, so a failed save leaves no mapping to a meal that was never stored
+            if areFetchedFromRemote, let localId = newItem.id?.uuidString, let objectId = entry.id {
+                NightscoutObjectIdStore.shared.record([(localId, objectId)], fromSite: nightscoutSiteURL)
+            }
         }
     }
 
     /// Inserts a meal root row into `context` without saving, so callers decide when to commit.
+    /// A downloaded meal's Nightscout `_id` is recorded by the caller once the save succeeded.
     private func insertCarbEntry(
         _ entry: CarbsEntry,
         into context: NSManagedObjectContext,
-        areFetchedFromRemote: Bool,
-        nightscoutSiteURL: String? = nil
-    ) {
+        areFetchedFromRemote: Bool
+    ) -> CarbEntryStored {
         let newItem = CarbEntryStored(context: context)
         newItem.date = entry.actualDate ?? entry.createdAt
         newItem.carbs = Double(truncating: NSDecimalNumber(decimal: entry.carbs))
@@ -367,10 +375,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         if let fpuId = entry.fpuID {
             newItem.fpuID = UUID(uuidString: fpuId)
         }
-
-        if areFetchedFromRemote, let localId = newItem.id?.uuidString, let objectId = entry.id {
-            NightscoutObjectIdStore.shared.record([(localId, objectId)], fromSite: nightscoutSiteURL)
-        }
+        return newItem
     }
 
     /// Inserts a locally created carb equivalent row into `context` without saving.
@@ -436,7 +441,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 context.delete(storedEntry)
             }
 
-            self.insertCarbEntry(entry, into: context, areFetchedFromRemote: false)
+            _ = self.insertCarbEntry(entry, into: context, areFetchedFromRemote: false)
             for carbEquivalent in carbEquivalents {
                 self.insertCarbEquivalent(carbEquivalent, into: context)
             }
@@ -449,11 +454,15 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         return orphanedFPUID
     }
 
-    private func saveFPUToCoreDataAsBatchInsert(entries: [CarbsEntry], areFetchedFromRemote: Bool) async {
+    /// - Returns: `true` if the carb equivalents were stored.
+    @discardableResult private func saveFPUToCoreDataAsBatchInsert(
+        entries: [CarbsEntry],
+        areFetchedFromRemote: Bool
+    ) async -> Bool {
         let context = makeContext()
         context.name = "saveFPUToCoreDataAsBatchInsert"
 
-        await context.perform {
+        return await context.perform {
             let commonFPUID = UUID(
                 uuidString: entries.first?.fpuID ?? UUID()
                     .uuidString
@@ -480,8 +489,10 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
 
                 // Notify subscriber in Home State Model to update the FPU Array
                 self.updateSubject.send(())
+                return true
             } catch {
                 warning(.storage, "Saving fat and protein entries failed", error: error)
+                return false
             }
         }
     }
