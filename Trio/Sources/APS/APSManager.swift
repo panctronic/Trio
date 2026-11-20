@@ -515,6 +515,11 @@ final class BaseAPSManager: APSManager, Injectable {
         determinationID: NSManagedObjectID?,
         loopStatRecord: LoopStats
     ) async {
+        // Record a success before releasing the guard: a loop() arriving in between would otherwise see the previous
+        // loop's date, skip the minimum interval and run straight after this one (with a possible second SMB).
+        if error == nil {
+            lastLoopDate = Date()
+        }
         await loopGuard.finish()
         isLooping.send(false)
 
@@ -523,7 +528,6 @@ final class BaseAPSManager: APSManager, Injectable {
             processError(error)
         } else {
             info(.loop, "Loop finished in \(String(format: "%.1f", Date().timeIntervalSince(loopStatRecord.start))) s")
-            lastLoopDate = Date()
             lastError.send(nil)
             transientCategoryLock.withLock {
                 transientCategoryFirstSeen.removeAll()
