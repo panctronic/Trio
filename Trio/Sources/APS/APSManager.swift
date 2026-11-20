@@ -463,8 +463,10 @@ final class BaseAPSManager: APSManager, Injectable {
             info(.loop, "Loop finished in \(String(format: "%.1f", Date().timeIntervalSince(loopStatRecord.start))) s")
             lastLoopDate = Date()
             lastError.send(nil)
-            transientCategoryFirstSeen.removeAll()
-            transientCategoryCount.removeAll()
+            transientCategoryLock.withLock {
+                transientCategoryFirstSeen.removeAll()
+                transientCategoryCount.removeAll()
+            }
         }
 
         loopStats(loopStatRecord: loopStatRecord)
@@ -977,6 +979,8 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
+    /// Errors arrive from the pump's queue, the loop task and bolus tasks at once; guarded by `transientCategoryLock`.
+    private let transientCategoryLock = NSLock()
     private var transientCategoryFirstSeen: [String: Date] = [:]
     private var transientCategoryCount: [String: Int] = [:]
     private static let transientDwellThreshold: TimeInterval = 60
@@ -1001,27 +1005,30 @@ final class BaseAPSManager: APSManager, Injectable {
         let category = TrioAlertClassifier.categorize(error: error)
         let key = String(describing: category)
 
-        if category.shouldFireImmediately || currentLoopUserInitiated {
-            transientCategoryFirstSeen.removeValue(forKey: key)
-            transientCategoryCount.removeValue(forKey: key)
-            issueAlertForError(error, category: category)
-            return
-        }
-
+        let fireImmediately = category.shouldFireImmediately || currentLoopUserInitiated
         let now = Date()
-        let firstSeen = transientCategoryFirstSeen[key] ?? now
-        let count = (transientCategoryCount[key] ?? 0) + 1
-        let dwellElapsed = now.timeIntervalSince(firstSeen)
-        let dwellMet = dwellElapsed >= Self.transientDwellThreshold
-        let countMet = count >= Self.transientCountThreshold
-
-        if dwellMet || countMet {
-            transientCategoryFirstSeen.removeValue(forKey: key)
-            transientCategoryCount.removeValue(forKey: key)
-            issueAlertForError(error, category: category)
-        } else {
+        let (issue, count, dwellElapsed) = transientCategoryLock.withLock { () -> (Bool, Int, TimeInterval) in
+            if fireImmediately {
+                transientCategoryFirstSeen.removeValue(forKey: key)
+                transientCategoryCount.removeValue(forKey: key)
+                return (true, 0, 0)
+            }
+            let firstSeen = transientCategoryFirstSeen[key] ?? now
+            let count = (transientCategoryCount[key] ?? 0) + 1
+            let dwellElapsed = now.timeIntervalSince(firstSeen)
+            if dwellElapsed >= Self.transientDwellThreshold || count >= Self.transientCountThreshold {
+                transientCategoryFirstSeen.removeValue(forKey: key)
+                transientCategoryCount.removeValue(forKey: key)
+                return (true, count, dwellElapsed)
+            }
             transientCategoryFirstSeen[key] = firstSeen
             transientCategoryCount[key] = count
+            return (false, count, dwellElapsed)
+        }
+
+        if issue {
+            issueAlertForError(error, category: category)
+        } else {
             debug(
                 .alerts,
                 "Alert for transient \(category) held back: \(count) of \(Self.transientCountThreshold) occurrences, \(Int(dwellElapsed)) of \(Int(Self.transientDwellThreshold)) s"
