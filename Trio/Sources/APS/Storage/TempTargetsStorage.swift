@@ -285,7 +285,9 @@ final class BaseTempTargetsStorage: TempTargetsStorage, Injectable {
                     targetTop: tempTarget
                         .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL),
                     targetBottom: tempTarget
-                        .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL)
+                        .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL),
+                    // lets the upload mark the row; without it the temp target is re-sent every pass
+                    id: tempTarget.id?.uuidString
                 )
             }
         }
@@ -321,7 +323,9 @@ final class BaseTempTargetsStorage: TempTargetsStorage, Injectable {
                     targetTop: tempTargetRun
                         .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL),
                     targetBottom: tempTargetRun
-                        .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL)
+                        .target as Decimal? ?? (self.settingsManager.settings.units == .mgdL ? 100.0 : 100.asMmolL),
+                    // lets the upload mark the row; without it the temp target is re-sent every pass
+                    id: tempTargetRun.id?.uuidString
                 )
             }
         }

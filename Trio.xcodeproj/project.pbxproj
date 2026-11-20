@@ -776,6 +776,7 @@
 		BD8FC0642D6619EF00B95AED /* TempTargetStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8FC0632D6619EF00B95AED /* TempTargetStorageTests.swift */; };
 		FE9C3A9F2A75014FB09A16B1 /* CoreDataProtectedDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D2BADBACD9C568C3682721A /* CoreDataProtectedDataTests.swift */; };
 		BD8FC0662D661A0000B95AED /* GlucoseStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8FC0652D661A0000B95AED /* GlucoseStorageTests.swift */; };
+		0C52B43BD31C1FB095055BEF /* UploadMarkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AFDC2E7CF9DAC73C80D7BAC /* UploadMarkingTests.swift */; };
 		BD8FC0712D661B0000B95AED /* TidepoolTherapySettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8FC0702D661B0000B95AED /* TidepoolTherapySettingsTests.swift */; };
 		CD1235B000000000000000F2 /* TidepoolUploadSerializerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1235A000000000000000F1 /* TidepoolUploadSerializerTests.swift */; };
 		CE1425B000000000000000A2 /* CarbsEntryLoopKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1425A000000000000000A1 /* CarbsEntryLoopKitTests.swift */; };
@@ -2076,6 +2077,7 @@
 		BD8FC0632D6619EF00B95AED /* TempTargetStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempTargetStorageTests.swift; sourceTree = "<group>"; };
 		2D2BADBACD9C568C3682721A /* CoreDataProtectedDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataProtectedDataTests.swift; sourceTree = "<group>"; };
 		BD8FC0652D661A0000B95AED /* GlucoseStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseStorageTests.swift; sourceTree = "<group>"; };
+		9AFDC2E7CF9DAC73C80D7BAC /* UploadMarkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadMarkingTests.swift; sourceTree = "<group>"; };
 		BD8FC0702D661B0000B95AED /* TidepoolTherapySettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TidepoolTherapySettingsTests.swift; sourceTree = "<group>"; };
 		CD1235A000000000000000F1 /* TidepoolUploadSerializerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TidepoolUploadSerializerTests.swift; sourceTree = "<group>"; };
 		CE1425A000000000000000A1 /* CarbsEntryLoopKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarbsEntryLoopKitTests.swift; sourceTree = "<group>"; };
@@ -4578,6 +4580,7 @@
 				BD8FC0632D6619EF00B95AED /* TempTargetStorageTests.swift */,
 				2D2BADBACD9C568C3682721A /* CoreDataProtectedDataTests.swift */,
 				BD8FC0652D661A0000B95AED /* GlucoseStorageTests.swift */,
+				9AFDC2E7CF9DAC73C80D7BAC /* UploadMarkingTests.swift */,
 			);
 			path = CoreDataTests;
 			sourceTree = "<group>";
@@ -6922,6 +6925,7 @@
 				3B997DCF2DC00A3A006B6BB2 /* JSONImporterTests.swift in Sources */,
 				3B2A3BC32E2B19F700658FB9 /* DynamicISFTests.swift in Sources */,
 				BD8FC0662D661A0000B95AED /* GlucoseStorageTests.swift in Sources */,
+				0C52B43BD31C1FB095055BEF /* UploadMarkingTests.swift in Sources */,
 				DDDD0FFF2F4E231B00F9C645 /* MockTDDStorage.swift in Sources */,
 				BD8FC05B2D6618AF00B95AED /* DeterminationStorageTests.swift in Sources */,
 				3BAAE60C2DE7766C0049589B /* DynamicISFEnableTests.swift in Sources */,
