@@ -153,10 +153,16 @@ final class BaseKeychain: Keychain {
     }
 
     /// The item to read when several match: most recently modified first, then the non-synced one.
-    static func preferred(_ items: [[String: Any]]) -> [String: Any]? {
-        items.max { lhs, rhs in
-            let lhsDate = lhs[kSecAttrModificationDate as String] as? Date ?? .distantPast
-            let rhsDate = rhs[kSecAttrModificationDate as String] as? Date ?? .distantPast
+    /// A synced item dated in the future (written on a device whose clock runs ahead) can't be compared,
+    /// so it counts as undated and the local item wins.
+    static func preferred(_ items: [[String: Any]], now: Date = Date()) -> [String: Any]? {
+        func modified(_ item: [String: Any]) -> Date {
+            guard let date = item[kSecAttrModificationDate as String] as? Date else { return .distantPast }
+            return isSynchronized(item) && date > now ? .distantPast : date
+        }
+        return items.max { lhs, rhs in
+            let lhsDate = modified(lhs)
+            let rhsDate = modified(rhs)
             if lhsDate != rhsDate { return lhsDate < rhsDate }
             // equal or unknown: the local one ranks higher
             return isSynchronized(lhs) == false ? false : !isSynchronized(rhs)
