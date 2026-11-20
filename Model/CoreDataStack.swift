@@ -4,7 +4,13 @@ import Foundation
 import OSLog
 import UIKit
 
-class CoreDataStack: ObservableObject {
+/// `@unchecked Sendable`: the stack is shared by every service, task and actor in the app. Its stored
+/// properties are constants (`persistentContainer`, the Combine subjects, `historyQueue`, the
+/// `CoreDataInitializationCoordinator` actor), except `notificationToken` and `remoteChangeCancellable`,
+/// which are written once in `setupPersistentStoreChangeNotifications()` while `initializeStack()` runs
+/// (serialised by the coordinator) and only read again in `deinit`. `lastToken` is backed by
+/// `UserDefaults`, and all managed object access goes through `perform` on the relevant context.
+class CoreDataStack: ObservableObject, @unchecked Sendable {
     static let shared = CoreDataStack()
     static let identifier = "CoreDataStack"
 
