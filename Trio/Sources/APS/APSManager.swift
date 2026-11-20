@@ -895,7 +895,7 @@ final class BaseAPSManager: APSManager, Injectable {
     private func fetchCurrentTempBasal(date: Date) async throws -> TempBasal {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchCurrentTempBasal"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let fetchedTempBasal = try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.recentPumpHistory,
@@ -903,11 +903,8 @@ final class BaseAPSManager: APSManager, Injectable {
             ascending: false,
             fetchLimit: 1,
             relationshipKeyPathsForPrefetching: ["tempBasal"]
-        )
-
-        let fetchedTempBasal = await context.perform {
-            guard let fetchedResults = results as? [PumpEventStored],
-                  let tempBasalEvent = fetchedResults.first,
+        ) { fetchedResults in
+            guard let tempBasalEvent = fetchedResults.first,
                   let tempBasal = tempBasalEvent.tempBasal,
                   let eventTimestamp = tempBasalEvent.timestamp
             else {
@@ -1045,7 +1042,7 @@ final class BaseAPSManager: APSManager, Injectable {
         fetchLimit: Int? = nil,
         batchSize: Int? = nil
     ) throws -> [GlucoseStored] {
-        let results = try CoreDataStack.shared.fetchEntities(
+        try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: predicate,
@@ -1054,10 +1051,6 @@ final class BaseAPSManager: APSManager, Injectable {
             fetchLimit: fetchLimit,
             batchSize: batchSize
         )
-        guard let glucoseResults = results as? [GlucoseStored] else {
-            throw CoreDataError.fetchError(function: #function, file: #file)
-        }
-        return glucoseResults
     }
 
     private func loopStats(loopStatRecord: LoopStats) {
