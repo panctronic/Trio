@@ -50314,131 +50314,131 @@
         }
       }
     },
-    "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent." : {
+    "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent." : {
       "localizations" : {
         "bg" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "fr" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Version de l'application, date de compilation, branche et commit SHA ; s'il s'agit d'une version TestFlight ; un identifiant par fournisseur (IDFV) fourni par Apple et un UUID par installation ; identifiant matériel (par ex. iPhone15,2); plateforme et version iOS; le modèle de pompe jumelée (quand une pompe est configuré); le type et le modèle CGM appariés (quand une MGC est configuré); si Nightscout, Tidepool et Apple Health sont configurés (oui/non — sans URLs, jetons ou identifiants); et quelques options de préférences (unités, boucle fermée on/off, Activité live, intégration du calendrier). Un nombre de lancements froids roulants est inclus. Le JSON complet est visible sous Diagnostics de l'application → Ce qui a été envoyé."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "ko" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "앱 버전, 빌드 날짜, 브랜치 및 커밋 SHA, TestFlight 빌드 여부, Apple 제공 공급업체 식별자(IDFV) 및 설치별 UUID, 하드웨어 식별자(예: iPhone15,2), 플랫폼 및 iOS 버전, 페어링된 펌프 모델, 페어링된 CGM 유형 및 모델, Nightscout·Tidepool·Apple 건강 구성 여부(예/아니오 - URL/토큰/자격 증명 제외), 일부 환경설정 플래그(단위, 폐쇄 루프 설정, 라이브 액티비티, 캘린더 연동) 및 콜드 런치 횟수가 포함됩니다. 전체 JSON은 앱 진단 → 전송 항목에서 확인할 수 있습니다."
           }
         },
         "nb-NO" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Appversjon, byggedato, branch og commit SHA; om dette er en TestFlight-bygg; en Apple-levert identifikator per leverandør (IDFV) og en UUID per installasjon; maskinvareidentifikator (f.eks. iPhone15,2); plattform- og iOS-versjon; den parede pumpemodellen (når en pumpe er konfigurert); den parede CGM-typen og -modellen (når en CGM er konfigurert); om Nightscout, Tidepool og Apple Health er konfigurert (ja/nei – ingen URL-er, tokener eller påloggingsinformasjon); og noen preferanseflagg (enheter, lukket loop av/på, Live Activity, kalenderintegrasjon). En telling av app-start er også med. Hele JSON-en er synlig under Appdiagnostikk → Hva sendes."
           }
         },
         "nl" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Appversie, builddatum, branch en commit-SHA; of het een TestFlight-build is; een door Apple verstrekte ID per ontwikkelaar (IDFV) en een unieke ID per installatie (UUID); het hardwaremodel (bijvoorbeeld iPhone15,2); het platform en de iOS-versie; het gekoppelde pompmodel en het type en model van de gekoppelde CGM, indien ingesteld; of Nightscout, Tidepool en Apple Gezondheid zijn ingesteld (ja/nee — zonder URL’s, tokens of inloggegevens); en enkele voorkeursinstellingen, zoals eenheden, closed-loop aan/uit, Live Activiteit en agenda-integratie. Ook wordt bijgehouden hoe vaak de app volledig opnieuw is gestart. De volledige JSON kun je bekijken via Appdiagnostiek → Wat wordt verzonden."
           }
         },
         "pl" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Wersja aplikacji, data kompilacji, gałąź i zatwierdzenie SHA; czy jest to kompilacja TestFlight; dostarczony przez Apple identyfikator dostawcy (IDFV) i identyfikator UUID instalacji; identyfikator sprzętu (np. iPhone15,2); wersja platformy i systemu iOS; sparowany model pompy (gdy pompa jest skonfigurowana); sparowany typ i model CGM (gdy CGM jest skonfigurowany); czy skonfigurowano Nightscout, Tidepool i Apple Health (tak/nie — bez adresów URL, tokenów ani danych uwierzytelniających); oraz kilka flag preferencji (jednostki, włączanie/wyłączanie pętli zamkniętej, aktywność na żywo, integracja z kalendarzem). Dołączona jest liczba uruchomień na zimno. Pełny kod JSON jest widoczny w sekcji Diagnostyka aplikacji → Co jest wysyłane."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; an Apple-supplied per-vendor identifier (IDFV) and a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
+            "value" : "App version, build date, branch, and commit SHA; whether this is a TestFlight build; a per-install UUID; hardware identifier (e.g. iPhone15,2); platform and iOS version; the paired pump model (when a pump is configured); the paired CGM type and model (when a CGM is configured); whether Nightscout, Tidepool, and Apple Health are configured (yes/no — no URLs, tokens, or credentials); and a few preference flags (units, closed-loop on/off, Live Activity, calendar integration). A rolling cold-launch count is included. The full JSON is visible under App Diagnostics → What's sent."
           }
         },
         "vi" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Phiên bản ứng dụng, ngày tạo bản dựng, nhánh phát triển và mã commit SHA; liệu đây có phải là bản dựng TestFlight hay không; mã định danh theo từng nhà phát triển do Apple cung cấp (IDFV) và UUID riêng cho mỗi lần cài đặt; mã nhận dạng phần cứng (ví dụ: iPhone15,2); nền tảng và phiên bản iOS; kiểu máy bơm đã ghép nối (khi đã cấu hình bơm); loại và kiểu CGM đã ghép nối (khi đã cấu hình CGM); trạng thái cấu hình của Nightscout, Tidepool và Apple Health (Có/Không — không bao gồm URL, mã truy cập hoặc thông tin đăng nhập); cùng một số tùy chọn cài đặt (đơn vị đo, bật/tắt vòng lặp kín, Live Activity và tích hợp lịch). Ngoài ra, còn bao gồm số lần khởi chạy ứng dụng từ trạng thái tắt hoàn toàn được ghi nhận theo dạng cuốn chiếu. Bạn có thể xem toàn bộ dữ liệu JSON tại Chẩn đoán ứng dụng → Dữ liệu được gửi."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "App 版本，构建日期，分支和提交 SHA；是否是Test Flight 构建； Apple 提供的每个供应商标识符 (IDFV)和每次安装的UUID；硬件标识码 (如： iPhone15,2); 平台和iOS版本; 配对的泵模型(当一个泵被配置时); 配对的 CGM 类型和模型(当配置一个 CGM 类型时); 是否配置 Nightscout、Tidepool 和Apple Health (是/否 - 无 URL、令牌或认证)； 和少数偏好标记 (单元，闭环开/关，实时活动，日历集成) 滚动冷启动次数已被包含。完整的 JSON 可在App诊断 -> 发送的内容 中可见 。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "App 版本、組建日期、分支與提交 SHA；是否為 TestFlight 組建；Apple 提供的每供應商識別碼（IDFV）與每次安裝的 UUID；硬體識別碼（例如 iPhone15,2）；平台與 iOS 版本；已配對的幫浦型號（當已設定幫浦時）；已配對的 CGM 類型與型號（當已設定 CGM 時）；是否已設定 Nightscout、Tidepool 與 Apple 健康（是/否 — 不含 URL、權杖或憑證）；以及數個設定旗標（單位、閉環 開/關、即時動態、行事曆整合）。另包含滾動的冷啟動次數。完整 JSON 可在「App 診斷」→「傳送的內容」中檢視。"
           }
         }

@@ -54,7 +54,8 @@ final class TelemetryAttestor: Injectable {
         }
     }
 
-    // Use when /checkin returns 401 (the server lost our registration)
+    // Use when /checkin returns 401 (the server lost our registration), and on opt-out so a later
+    // opt-in registers a new key that can't be linked to this one
     func invalidateRegistration() {
         AppAttestClient.invalidateRegistration(namespace: Self.namespace, in: keychain)
     }
