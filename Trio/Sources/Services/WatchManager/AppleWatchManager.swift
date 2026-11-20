@@ -437,21 +437,13 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     private func fetchGlucose() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchGlucose"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.glucose,
             key: "date",
             ascending: false
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     /// Fetches last pump event that is a non-external bolus from CoreData
@@ -459,7 +451,7 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     func fetchLastBolus() async throws -> NSManagedObjectID? {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchLastBolus"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.lastPumpBolus,
@@ -467,15 +459,7 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
             ascending: false,
             fetchLimit: 1,
             relationshipKeyPathsForPrefetching: ["bolus"]
-        )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map(\.objectID).first
-        }
+        ).first
     }
 
     /// Gets the active bolus amount by fetching last (active) bolus.

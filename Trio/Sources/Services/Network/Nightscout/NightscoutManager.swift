@@ -609,17 +609,15 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
 
         let tddContext = CoreDataStack.shared.newTaskContext()
         tddContext.name = "uploadDeviceStatus.tdd"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let tdd: Decimal? = try await CoreDataStack.shared.fetchAndMap(
             ofType: TDDStored.self,
             onContext: tddContext,
             predicate: NSPredicate.predicateFor30MinAgo,
             key: "date",
             ascending: false,
             fetchLimit: 1
-        )
-
-        let tdd: Decimal? = await tddContext.perform {
-            (results as? [TDDStored])?.first?.total as? Decimal
+        ) { results in
+            results.first?.total as? Decimal
         }
 
         // Suggested / Enacted

@@ -90,7 +90,7 @@ final class BaseContactImageManager: NSObject, ContactImageManager, Injectable {
     private func fetchlastDetermination() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchlastDetermination"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate(format: "deliverAt >= %@", Date.halfHourAgo as NSDate), // fetches enacted and suggested
@@ -98,20 +98,12 @@ final class BaseContactImageManager: NSObject, ContactImageManager, Injectable {
             ascending: false,
             fetchLimit: 1
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [OrefDetermination] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     private func fetchGlucose() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchGlucose"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.predicateFor20MinAgo,
@@ -119,14 +111,6 @@ final class BaseContactImageManager: NSObject, ContactImageManager, Injectable {
             ascending: false,
             fetchLimit: 3 /// We only need 1-3 values, depending on whether the user wants to show delta or not
         )
-
-        return try await context.perform {
-            guard let glucoseResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return glucoseResults.map(\.objectID)
-        }
     }
 
     private func getCurrentGlucoseTarget() async -> Decimal? {

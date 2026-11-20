@@ -143,7 +143,7 @@ final class BaseUserNotificationsManager: NSObject, UserNotificationsManager, In
     private func fetchGlucoseIDs() async throws -> [NSManagedObjectID] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchGlucoseIDs"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.predicateFor20MinAgo,
@@ -151,14 +151,6 @@ final class BaseUserNotificationsManager: NSObject, UserNotificationsManager, In
             ascending: false,
             fetchLimit: 3
         )
-
-        return try await context.perform {
-            guard let fetchedResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedResults.map(\.objectID)
-        }
     }
 
     /// Refreshes the Trio app icon badge from the latest stored glucose
