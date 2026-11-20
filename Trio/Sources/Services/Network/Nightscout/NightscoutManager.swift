@@ -44,6 +44,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     @Injected() private var apsManager: APSManager!
     @Injected() private var therapyProfileStorage: TherapyProfileStorage!
     @Injected() private var deviceDataManager: DeviceDataManager!
+    @Injected() private var syncStatusTracker: SyncStatusTracker!
 
     private let processQueue = DispatchQueue(label: "BaseNetworkManager.processQueue")
     private var ping: TimeInterval?
@@ -758,6 +759,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             try await nightscout.uploadDeviceStatus(status)
             info(.nightscout, "Device status uploaded")
+            syncStatusTracker.recordSuccess(.nightscout, .deviceStatus)
 
             if let enacted = fetchedEnactedDetermination {
                 await updateOrefDeterminationAsUploaded([enacted])
@@ -778,6 +780,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             }
         } catch {
             warning(.nightscout, "Device status upload failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .deviceStatus, error: error)
         }
     }
 
@@ -1004,8 +1007,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             }
 
             info(.nightscout, "Uploaded \(glucose.count) glucose values")
+            syncStatusTracker.recordSuccess(.nightscout, .glucose)
         } catch {
             warning(.nightscout, "Upload of \(glucose.count) glucose values failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .glucose, error: error)
         }
     }
 
@@ -1070,8 +1075,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             }
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
+            syncStatusTracker.recordSuccess(.nightscout, .treatments)
         } catch {
             warning(.nightscout, "Upload of \(treatments.count) pump events failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .treatments, error: error)
         }
     }
 
@@ -1151,8 +1158,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             }
 
             info(.nightscout, "Uploaded \(treatments.count) carb entries")
+            syncStatusTracker.recordSuccess(.nightscout, .carbs)
         } catch {
             warning(.nightscout, "Upload of \(treatments.count) carb entries failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .carbs, error: error)
         }
     }
 
@@ -1226,8 +1235,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateOverridesAsUploaded(processedOverrides)
 
             info(.nightscout, "Uploaded \(processedOverrides.count) overrides")
+            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
         } catch {
             warning(.nightscout, "Upload of \(overrides.count) overrides failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
         }
     }
 
@@ -1282,8 +1293,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateOverrideRunsAsUploaded(overrideRuns)
 
             info(.nightscout, "Uploaded \(processedOverrideRuns.count) override runs")
+            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
         } catch {
             warning(.nightscout, "Upload of \(overrideRuns.count) override runs failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
         }
     }
 
@@ -1323,8 +1336,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateTempTargetsAsUploaded(tempTargets)
 
             info(.nightscout, "Uploaded \(tempTargets.count) temp targets")
+            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
         } catch {
             warning(.nightscout, "Upload of \(tempTargets.count) temp targets failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
         }
     }
 
@@ -1364,8 +1379,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateTempTargetRunsAsUploaded(tempTargetRuns)
 
             info(.nightscout, "Uploaded \(tempTargetRuns.count) temp target runs")
+            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
         } catch {
             warning(.nightscout, "Upload of \(tempTargetRuns.count) temp target runs failed", error: error)
+            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
         }
     }
 

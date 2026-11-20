@@ -55,6 +55,7 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     @Injected() private var pumpHistoryStorage: PumpHistoryStorage!
     @Injected() private var deviceDataManager: DeviceDataManager!
     @Injected() private var fileStorage: FileStorage!
+    @Injected() private var syncStatusTracker: SyncStatusTracker!
 
     /// Deletions Apple Health did not accept, retried on the glucose upload pass.
     private var pendingDeletions: PendingDeletionQueue!
@@ -244,12 +245,14 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             // Attempt to save the blood glucose samples to Apple Health
             try await healthKitStore.save(glucoseSamples)
             debug(.healthKit, "Uploaded \(glucoseSamples.count) glucose samples to Apple Health")
+            syncStatusTracker.recordSuccess(.appleHealth, .glucose)
 
             // After successful upload, update the isUploadedToHealth flag in Core Data
             await updateGlucoseAsUploaded(glucose)
 
         } catch {
             warning(.healthKit, "Uploading glucose samples to Apple Health failed", error: error)
+            syncStatusTracker.recordFailure(.appleHealth, .glucose, error: error)
         }
     }
 
@@ -362,12 +365,14 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
             try await healthKitStore.save(samples)
             debug(.healthKit, "Uploaded \(samples.count) carb samples to Apple Health")
+            syncStatusTracker.recordSuccess(.appleHealth, .carbs)
 
             // After successful upload, update the isUploadedToHealth flag in Core Data
             await updateCarbsAsUploaded(carbs)
 
         } catch {
             warning(.healthKit, "Uploading carb samples to Apple Health failed", error: error)
+            syncStatusTracker.recordFailure(.appleHealth, .carbs, error: error)
         }
     }
 
@@ -485,9 +490,11 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
                 try await healthKitStore.save(insulinSamples)
                 debug(.healthKit, "Uploaded \(insulinSamples.count) insulin samples to Apple Health")
+                syncStatusTracker.recordSuccess(.appleHealth, .treatments)
                 await updateInsulinAsUploaded(insulinEvents)
             } catch {
                 warning(.healthKit, "Uploading insulin samples to Apple Health failed", error: error)
+                syncStatusTracker.recordFailure(.appleHealth, .treatments, error: error)
             }
         } catch {
             warning(.healthKit, "Fetching temp basals for Apple Health upload failed", error: error)

@@ -1202,6 +1202,14 @@
 		CA0924000000000000000004 /* GRIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0924000000000000000003 /* GRIView.swift */; };
 		CA0924000000000000000006 /* GRICalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0924000000000000000005 /* GRICalculatorTests.swift */; };
 		FF42480CF46A31D00C817D8C /* WatchLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5D79872B74ADDBDD11682D0 /* WatchLogEntry.swift */; };
+		03E78BF3C72B499E53AE7731 /* SyncStatusTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798F549498217F9788FC5A05 /* SyncStatusTracker.swift */; };
+		F8DC2ED68FDABFDBCAEB62D3 /* SyncStatusRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = C97A1FF9006405B5D998B902 /* SyncStatusRules.swift */; };
+		7FCA527A36C6723C99F10566 /* SyncBacklogCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32327A56852A79B4CD73A8C /* SyncBacklogCounter.swift */; };
+		F7517FEE7CF9030B3747AC98 /* SyncStatusDataFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0235AC124FC897E156B007A5 /* SyncStatusDataFlow.swift */; };
+		A13841DB25CF7DC4A620D4B5 /* SyncStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA22E31308559DCC07527E7 /* SyncStatusProvider.swift */; };
+		6EA359622F90A3292C652C53 /* SyncStatusStateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E97B4D83E755753E2771AAB4 /* SyncStatusStateModel.swift */; };
+		5DB65C5EDA5849CE748C3AD7 /* SyncStatusRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D8E7BEFCA91890AF530589 /* SyncStatusRootView.swift */; };
+		9E98B4BCD7F14E69E498F630 /* SyncStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB794DCADBA9993902E8F55 /* SyncStatusTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -2492,6 +2500,14 @@
 		CA0924000000000000000001 /* GRICalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRICalculator.swift; sourceTree = "<group>"; };
 		CA0924000000000000000003 /* GRIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRIView.swift; sourceTree = "<group>"; };
 		CA0924000000000000000005 /* GRICalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRICalculatorTests.swift; sourceTree = "<group>"; };
+		798F549498217F9788FC5A05 /* SyncStatusTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusTracker.swift; sourceTree = "<group>"; };
+		C97A1FF9006405B5D998B902 /* SyncStatusRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusRules.swift; sourceTree = "<group>"; };
+		A32327A56852A79B4CD73A8C /* SyncBacklogCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncBacklogCounter.swift; sourceTree = "<group>"; };
+		0235AC124FC897E156B007A5 /* SyncStatusDataFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusDataFlow.swift; sourceTree = "<group>"; };
+		2CA22E31308559DCC07527E7 /* SyncStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusProvider.swift; sourceTree = "<group>"; };
+		E97B4D83E755753E2771AAB4 /* SyncStatusStateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusStateModel.swift; sourceTree = "<group>"; };
+		C8D8E7BEFCA91890AF530589 /* SyncStatusRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusRootView.swift; sourceTree = "<group>"; };
+		6EB794DCADBA9993902E8F55 /* SyncStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -2887,6 +2903,7 @@
 		3811DE0325C9D31700A708ED /* Modules */ = {
 			isa = PBXGroup;
 			children = (
+				A644FCDC6D897F49F5EE1286 /* SyncStatus */,
 				4E5AF133265E816F2C63CCEA /* TherapyProfiles */,
 				DDD163032C4C67B400CD525A /* Adjustments */,
 				DD1745382C55BF8B00211FAC /* AlgorithmAdvancedSettings */,
@@ -3055,6 +3072,7 @@
 		3811DE9125C9D88200A708ED /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				7639A53505D7DC694E8179A2 /* SyncStatus */,
 				CF2A9C8279DA445ECBD8CBC5 /* TherapyProfiles */,
 				B015AFF22E600000000D7351 /* Adjustments */,
 				BD1179262F4E22C100F90001 /* Alerts */,
@@ -3793,6 +3811,7 @@
 				BD8FC0532D66186000B95AED /* TestError.swift */,
 				C39FF1EC12CF4B1EBB13BE26 /* NightscoutUploadSerializerTests.swift */,
 				9B5FC3FA5A983D1D1B22B365 /* PendingDeletionQueueTests.swift */,
+				6EB794DCADBA9993902E8F55 /* SyncStatusTests.swift */,
 				604517564125C177D8048FD9 /* NightscoutAPIURLTests.swift */,
 				6EFF860E684B4C9488D438DD /* NightscoutImportRoundTripTests.swift */,
 				BD8FC0702D661B0000B95AED /* TidepoolTherapySettingsTests.swift */,
@@ -5521,6 +5540,35 @@
 			path = QuickPickTreatments;
 			sourceTree = "<group>";
 		};
+		7639A53505D7DC694E8179A2 /* SyncStatus */ = {
+			isa = PBXGroup;
+			children = (
+				798F549498217F9788FC5A05 /* SyncStatusTracker.swift */,
+				C97A1FF9006405B5D998B902 /* SyncStatusRules.swift */,
+				A32327A56852A79B4CD73A8C /* SyncBacklogCounter.swift */,
+			);
+			path = SyncStatus;
+			sourceTree = "<group>";
+		};
+		6723C4BFCFF484AB7E58FF6B /* View */ = {
+			isa = PBXGroup;
+			children = (
+				C8D8E7BEFCA91890AF530589 /* SyncStatusRootView.swift */,
+			);
+			path = View;
+			sourceTree = "<group>";
+		};
+		A644FCDC6D897F49F5EE1286 /* SyncStatus */ = {
+			isa = PBXGroup;
+			children = (
+				0235AC124FC897E156B007A5 /* SyncStatusDataFlow.swift */,
+				2CA22E31308559DCC07527E7 /* SyncStatusProvider.swift */,
+				E97B4D83E755753E2771AAB4 /* SyncStatusStateModel.swift */,
+				6723C4BFCFF484AB7E58FF6B /* View */,
+			);
+			path = SyncStatus;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -5988,6 +6036,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5DB65C5EDA5849CE748C3AD7 /* SyncStatusRootView.swift in Sources */,
+				6EA359622F90A3292C652C53 /* SyncStatusStateModel.swift in Sources */,
+				A13841DB25CF7DC4A620D4B5 /* SyncStatusProvider.swift in Sources */,
+				F7517FEE7CF9030B3747AC98 /* SyncStatusDataFlow.swift in Sources */,
+				7FCA527A36C6723C99F10566 /* SyncBacklogCounter.swift in Sources */,
+				F8DC2ED68FDABFDBCAEB62D3 /* SyncStatusRules.swift in Sources */,
+				03E78BF3C72B499E53AE7731 /* SyncStatusTracker.swift in Sources */,
 				662B8B7A520F2A09917A1F48 /* TrioRemoteControl+Profile.swift in Sources */,
 				29C235F4BE7AA9B6EF46FF75 /* CompactTherapyProfile.swift in Sources */,
 				32F21710DA1598DCC783D61E /* TherapyProfileBanner.swift in Sources */,
@@ -6803,6 +6858,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E98B4BCD7F14E69E498F630 /* SyncStatusTests.swift in Sources */,
 				0EE3091BCB5620EA4AA5A757 /* TherapyProfileRemoteValuesTests.swift in Sources */,
 				1994FB53A99174972EF458B0 /* TrioRemoteControlProfileTests.swift in Sources */,
 				A762A98FDDF371B52CF18F86 /* TherapyProfileNightscoutTests.swift in Sources */,

@@ -30,6 +30,13 @@ struct ServicesView: BaseView {
                 }
             )
             .listRowBackground(Color.chart)
+
+            Section(
+                footer: Text("Whether uploads are getting through, and what is still waiting.")
+            ) {
+                Text("Sync Status").navigationLink(to: .syncStatus, from: self)
+            }
+            .listRowBackground(Color.chart)
         }
         .scrollContentBackground(.hidden)
         .background(appState.trioBackgroundColor(for: colorScheme))

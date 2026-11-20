@@ -34,6 +34,7 @@ final class BaseTidepoolManager: TidepoolManager, Injectable {
     @Injected() private var settingsManager: SettingsManager!
     @Injected() private var notificationCenter: NotificationCenter!
     @Injected() private var trioAlertManager: TrioAlertManager!
+    @Injected() private var syncStatusTracker: SyncStatusTracker!
 
     /// Raised by `TidepoolService` when its login session is cleared
     static let authenticationAlertIdentifier = LoopKit.Alert.Identifier(
@@ -360,10 +361,12 @@ extension BaseTidepoolManager {
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) carb entries to Tidepool")
+                syncStatusTracker.recordSuccess(.tidepool, .carbs)
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateCarbsAsUploaded(Array(chunk))
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(chunk.count) carb entries failed", error: error)
+                syncStatusTracker.recordFailure(.tidepool, .carbs, error: error)
             }
         }
     }
@@ -513,12 +516,14 @@ extension BaseTidepoolManager {
             switch doseResult {
             case .success:
                 info(.tidepool, "Uploaded \(insulinDoseEvents.count) dose entries to Tidepool")
+                syncStatusTracker.recordSuccess(.tidepool, .treatments)
                 let insulinEvents = events.filter {
                     $0.type == .tempBasal || $0.type == .tempBasalDuration || $0.type == .bolus
                 }
                 await updateInsulinAsUploaded(insulinEvents)
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(insulinDoseEvents.count) dose entries failed", error: error)
+                syncStatusTracker.recordFailure(.tidepool, .treatments, error: error)
             }
 
             guard await uploadSerializer.isCurrent(generation) else { return }
@@ -529,10 +534,12 @@ extension BaseTidepoolManager {
             switch pumpResult {
             case .success:
                 info(.tidepool, "Uploaded \(pumpEvents.count) pump events to Tidepool")
+                syncStatusTracker.recordSuccess(.tidepool, .treatments)
                 let pumpEventsToMark = events.filter { $0.type.mapEventTypeToPumpEventType() != nil }
                 await updateInsulinAsUploaded(pumpEventsToMark)
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(pumpEvents.count) pump events failed", error: error)
+                syncStatusTracker.recordFailure(.tidepool, .treatments, error: error)
             }
         } catch {
             warning(.tidepool, "Failed to prepare dose entries for Tidepool upload", error: error)
@@ -833,10 +840,12 @@ extension BaseTidepoolManager {
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) glucose values to Tidepool")
+                syncStatusTracker.recordSuccess(.tidepool, .glucose)
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateGlucoseAsUploaded(Array(chunk))
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(chunk.count) glucose values failed", error: error)
+                syncStatusTracker.recordFailure(.tidepool, .glucose, error: error)
             }
         }
     }
