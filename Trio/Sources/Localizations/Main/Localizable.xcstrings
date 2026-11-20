@@ -1122,6 +1122,15 @@
     "Carbs must be more than 0 g." : {
       "comment" : "Watch message when a carbs entry of zero or less is received"
     },
+    "Carbs were saved, but the bolus was not delivered. Do not enter the carbs again. %@" : {
+      "comment" : "Alert when a meal was saved but the bolus with it failed; the argument is the reason"
+    },
+    "Carbs were saved, but the outcome of the bolus is not known. Check pump history before repeating the bolus." : {
+      "comment" : "Alert when a meal was saved and no outcome was reported for the bolus with it"
+    },
+    "Carbs were saved, but the pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
+      "comment" : "Alert when a meal was saved and it is not known whether the bolus with it was delivered; the argument is the pump's reason"
+    },
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
     },

@@ -83,4 +83,12 @@ import Testing
         #expect(failed.contains("Pump suspended"), "The pump's reason must reach the user")
         #expect(unknown != enacted)
     }
+
+    // MARK: - Treatments
+
+    @Test("A failed bolus after a saved meal says the carbs were saved") func testMealSavedBolusFailedMessage() {
+        let failed = Treatments.StateModel.mealSavedBolusFailedMessage(for: .failed(message: "Pump suspended", error: nil))
+        #expect(failed.contains("Pump suspended"))
+        #expect(Treatments.StateModel.mealSavedBolusFailedMessage(for: nil) != failed)
+    }
 }
