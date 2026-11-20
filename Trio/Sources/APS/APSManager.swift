@@ -350,19 +350,20 @@ final class BaseAPSManager: APSManager, Injectable {
                 interval: interval
             )
 
+            var determinationID: NSManagedObjectID?
             do {
-                let enacted = try await executeLoop(loopStatRecord: &loopStatRecord)
+                let enacted = try await executeLoop(loopStatRecord: &loopStatRecord, determinationID: &determinationID)
                 requestNightscoutUpload(
                     [.carbs, .pumpHistory, .overrides, .tempTargets, .profiles],
                     source: "APSManager"
                 )
-                await finalizeLoop(enacted: enacted, loopStatRecord: loopStatRecord)
+                await finalizeLoop(enacted: enacted, determinationID: determinationID, loopStatRecord: loopStatRecord)
             } catch {
                 let endDate = Date()
                 loopStatRecord.end = endDate
                 loopStatRecord.duration = roundDouble((endDate - loopStatRecord.start).timeInterval / 60, 2)
                 loopStatRecord.loopStatus = error.localizedDescription
-                await finalizeLoop(error: error, loopStatRecord: loopStatRecord)
+                await finalizeLoop(error: error, determinationID: determinationID, loopStatRecord: loopStatRecord)
             }
 
             // End the background task
@@ -373,14 +374,19 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
-    /// Returns whether the determination was enacted.
-    private func executeLoop(loopStatRecord: inout LoopStats) async throws -> Bool {
-        try await determineBasal()
+    /// Returns whether the determination was enacted. `determinationID` is set to the record this
+    /// cycle stored, as soon as it is stored, so the caller can report its enacted state on failure too.
+    private func executeLoop(
+        loopStatRecord: inout LoopStats,
+        determinationID: inout NSManagedObjectID?
+    ) async throws -> Bool {
+        let storedID = try await determineBasal()
+        determinationID = storedID
 
         // Closed loop: also enact the determination.
         var enacted = false
         if settings.dosingMode.automation != .off {
-            enacted = try await enactDetermination()
+            enacted = try await enactDetermination(determinationID: storedID)
         }
 
         let endDate = Date()
@@ -417,7 +423,12 @@ final class BaseAPSManager: APSManager, Injectable {
     }
 
     /// Single exit point for loop — replaces the old `loopCompleted()`.
-    private func finalizeLoop(error: Error? = nil, enacted: Bool = false, loopStatRecord: LoopStats) async {
+    private func finalizeLoop(
+        error: Error? = nil,
+        enacted: Bool = false,
+        determinationID: NSManagedObjectID?,
+        loopStatRecord: LoopStats
+    ) async {
         await loopGuard.finish()
         isLooping.send(false)
 
@@ -434,8 +445,10 @@ final class BaseAPSManager: APSManager, Injectable {
 
         loopStats(loopStatRecord: loopStatRecord)
 
-        if settings.dosingMode.automation != .off {
-            await reportEnacted(wasEnacted: error == nil && enacted)
+        // Only the record this cycle stored. Without one (the run failed before storing) there is nothing
+        // to report: falling back to the latest record would overwrite a previous cycle's enacted state.
+        if settings.dosingMode.automation != .off, let determinationID {
+            await reportEnacted(determinationID: determinationID, wasEnacted: error == nil && enacted)
         }
     }
 
@@ -486,7 +499,8 @@ final class BaseAPSManager: APSManager, Injectable {
         await tddStorage.storeTDD(tddResult)
     }
 
-    private func determineBasal() async throws {
+    /// Returns the object ID of the stored determination this run produced.
+    @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
         try await calculateAndStoreTDD()
 
         var invalidGlucoseError: String?
@@ -539,7 +553,7 @@ final class BaseAPSManager: APSManager, Injectable {
             let currentTemp = try await fetchCurrentTempBasal(date: now)
             _ = try await autosense()
 
-            let determination = try await openAPS.determineBasal(
+            let (determination, storedID) = try await openAPS.determineBasalAndStore(
                 for: settingsManager.settings.dosingMode,
                 currentTemp: currentTemp,
                 supportedBasalRates: supportedBasalRates,
@@ -552,19 +566,22 @@ final class BaseAPSManager: APSManager, Injectable {
                 throw APSError.glucoseError(message: "Glucose validation failed")
             }
 
-            if let determination = determination {
-                info(
-                    .loop,
-                    "Determination: eventual BG \(determination.eventualBG.map { "\($0) mg/dL" } ?? "none"), temp basal \(determination.rate.map { "\($0) U/h for \(determination.duration ?? 0) min" } ?? "none"), SMB \(determination.units ?? 0) U"
-                )
-                // Capture weak self in closure
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.broadcaster.notify(DeterminationObserver.self, on: .main) {
-                        $0.determinationDidUpdate(determination)
-                    }
+            info(
+                .loop,
+                "Determination: eventual BG \(determination.eventualBG.map { "\($0) mg/dL" } ?? "none"), temp basal \(determination.rate.map { "\($0) U/h for \(determination.duration ?? 0) min" } ?? "none"), SMB \(determination.units ?? 0) U"
+            )
+            // Capture weak self in closure
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.broadcaster.notify(DeterminationObserver.self, on: .main) {
+                    $0.determinationDidUpdate(determination)
                 }
             }
+
+            guard let storedID else {
+                throw APSError.apsError(message: "Determination was not stored")
+            }
+            return storedID
         } catch {
             iobFileDidUpdate.send(())
 
@@ -780,14 +797,9 @@ final class BaseAPSManager: APSManager, Injectable {
         }
     }
 
-    /// Returns false when the determination is skipped because the pump is suspended.
-    private func enactDetermination() async throws -> Bool {
-        guard let determinationID = try await determinationStorage
-            .fetchLastDeterminationObjectID(predicate: NSPredicate.predicateFor30MinAgoForDetermination).first
-        else {
-            throw APSError.apsError(message: "Determination not found")
-        }
-
+    /// Enacts the determination stored by this loop cycle. Returns false when it is skipped because the
+    /// pump is suspended.
+    private func enactDetermination(determinationID: NSManagedObjectID) async throws -> Bool {
         guard let pump = pumpManager else {
             throw APSError.apsError(message: "Pump not set")
         }
@@ -824,11 +836,17 @@ final class BaseAPSManager: APSManager, Injectable {
         context.name = "setValues"
         return try await context.perform {
             do {
-                let determination = try context.existingObject(with: determinationID) as? OrefDetermination
+                guard let determination = try context.existingObject(with: determinationID) as? OrefDetermination else {
+                    throw APSError.apsError(message: "Determination not found")
+                }
+                // Never enact a record twice: its SMB would be delivered again.
+                guard !determination.enacted else {
+                    throw APSError.apsError(message: "Determination was already enacted")
+                }
 
-                let rate = determination?.rate
-                let duration = determination?.duration.flatMap { TimeInterval(truncating: $0) * 60 }
-                let smbToDeliver = determination?.smbToDeliver ?? 0
+                let rate = determination.rate
+                let duration = determination.duration.flatMap { TimeInterval(truncating: $0) * 60 }
+                let smbToDeliver = determination.smbToDeliver ?? 0
 
                 return (rate, duration, smbToDeliver)
             } catch {
@@ -852,15 +870,8 @@ final class BaseAPSManager: APSManager, Injectable {
         bolusProgress.send(0)
     }
 
-    private func reportEnacted(wasEnacted: Bool) async {
+    private func reportEnacted(determinationID: NSManagedObjectID, wasEnacted: Bool) async {
         do {
-            guard let determinationID = try await determinationStorage
-                .fetchLastDeterminationObjectID(predicate: NSPredicate.predicateFor30MinAgoForDetermination).first
-            else {
-                debug(.loop, "No recent determination to mark as enacted")
-                return
-            }
-
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "reportEnacted"
             try await context.perform {
