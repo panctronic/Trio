@@ -800,6 +800,11 @@ extension Treatments {
                 self.isAwaitingDeterminationResult = true
             }
 
+            guard amount > 0 else {
+                await showSubmissionFailure(ExternalInsulin.nothingToLogMessage(increment: settings.preferences.bolusIncrement))
+                return false
+            }
+
             // store external dose to pump history
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: amount, timestamp: date)
             info(.bolus, "External insulin of \(amount) U logged")

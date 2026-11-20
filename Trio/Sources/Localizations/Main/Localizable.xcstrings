@@ -1098,7 +1098,7 @@
     "%@ U of external insulin was logged. Do not log it again. Only updating the forecast failed: %@" : {
       "comment" : "Message when external insulin was saved but the following determination failed; the arguments are the amount and the reason"
     },
-    "%@ U was rounded down to the bolus increment." : {
+    "%@ U was rounded to the bolus increment." : {
       "comment" : "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
     },
     "%@ U was rounded down to what the pump can deliver." : {
@@ -1193,6 +1193,9 @@
     },
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
+    },
+    "Nothing logged: the amount rounds to 0 U. The smallest amount that can be logged is %@ U." : {
+      "comment" : "Message when external insulin rounds to 0 U; the argument is the bolus increment"
     },
     "Oldest waiting" : {
       "comment" : "Sync status: label for the age of the oldest record not yet uploaded"

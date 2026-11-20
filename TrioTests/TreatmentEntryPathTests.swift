@@ -72,7 +72,7 @@ import Testing
 
     // MARK: - External insulin
 
-    @Test("External insulin is rounded to the increment without a volume cap") func testExternalInsulinRounding() {
+    @Test("External insulin is rounded to the nearest increment without a volume cap") func testExternalInsulinRounding() {
         #expect(ExternalInsulin.rounded(40, toIncrement: 0.05) == 40, "40 U taken must not be logged as a pump's 30 U maximum")
         #expect(
             ExternalInsulin
@@ -83,6 +83,19 @@ import Testing
                 .rounded(Decimal(string: "2.35")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.35")!
         )
         #expect(ExternalInsulin.rounded(-1, toIncrement: 0.05) == 0)
+        #expect(
+            ExternalInsulin.rounded(Decimal(string: "2.38")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.4")!,
+            "Rounded to the nearest step, not down"
+        )
+        #expect(
+            ExternalInsulin
+                .rounded(Decimal(string: "0.03")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "0.05")!
+        )
+        #expect(ExternalInsulin.rounded(Decimal(string: "0.02")!, toIncrement: Decimal(string: "0.05")!) == 0)
+        #expect(
+            ExternalInsulin.nothingToLogMessage(increment: Decimal(string: "0.05")!)
+                .contains(Decimal(string: "0.05")!.formatted())
+        )
     }
 
     @Test("External insulin above max bolus is always confirmed with a warning") func testExternalInsulinConfirmation() {
