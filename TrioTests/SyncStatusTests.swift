@@ -60,10 +60,52 @@ private final class SyncTestClock: Sendable {
         let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
         tracker.recordSuccess(.nightscout, .deviceStatus)
         tracker.recordFailure(.appleHealth, .treatments, message: "Not authorized")
+        tracker.flush()
 
         let relaunched = SyncStatusTracker(storage: storage)
         #expect(relaunched.snapshot == tracker.snapshot)
         #expect(relaunched.snapshot[.nightscout].lastSuccess[.deviceStatus] == clock.now)
+    }
+
+    @Test("Failures reach the file right away") func failuresWrittenPromptly() {
+        let storage = InMemoryFileStorage()
+        let clock = SyncTestClock()
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
+
+        tracker.recordFailure(.nightscout, .glucose, message: "offline")
+        tracker.waitForPendingWrites()
+
+        #expect(storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self)?[.nightscout].failures[.glucose] != nil)
+    }
+
+    @Test("New upload times are written at most once a minute") func successesThrottled() {
+        let storage = InMemoryFileStorage()
+        let clock = SyncTestClock()
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
+        let stored = { storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self) ?? SyncStatusSnapshot() }
+
+        // Nothing written yet: the first change goes out right away.
+        tracker.recordSuccess(.nightscout, .glucose)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.nightscout].lastSuccess[.glucose] == clock.now)
+
+        // Within a minute of that write, a new time stays in memory.
+        clock.advance(10)
+        tracker.recordSuccess(.nightscout, .carbs)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.nightscout].lastSuccess[.carbs] == nil)
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.carbs] == clock.now)
+
+        // A success that clears a failure is not held back.
+        tracker.recordFailure(.tidepool, .carbs, message: "HTTP 500")
+        tracker.waitForPendingWrites()
+        clock.advance(5)
+        tracker.recordSuccess(.tidepool, .carbs)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.tidepool].failures[.carbs] == nil)
+
+        tracker.flush()
+        #expect(stored() == tracker.snapshot)
     }
 
     @Test("Changes are announced") func postsChange() {

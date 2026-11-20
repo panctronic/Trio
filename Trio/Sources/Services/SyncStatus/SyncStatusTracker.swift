@@ -183,31 +183,47 @@ struct SyncStatusSnapshot: JSON, Equatable, Sendable {
 /// Records the outcome of every upload to Nightscout, Tidepool and Apple Health, so the Sync Status
 /// screen can show when each kind of data last went out and what the last error was.
 ///
-/// The managers call `recordSuccess` / `recordFailure` from whatever task or queue the upload runs
-/// on. The record survives a relaunch in a small JSON file. Observers listen for
-/// `SyncStatusTracker.didChange` (posted on the calling thread).
+/// The managers call `record` / `recordSuccess` / `recordFailure` from whatever task or queue the
+/// upload runs on. Observers listen for `SyncStatusTracker.didChange` (posted on the calling thread).
 ///
-/// `@unchecked Sendable`: the only mutable state sits in `state`'s lock, and the file write happens
-/// inside that lock; `FileStorage` (`BaseFileStorage`) serialises its own file access.
+/// The record survives a relaunch in a small JSON file. Updates only touch memory under the lock;
+/// the file is written on `writeQueue` with the latest snapshot. A change to the failures is written
+/// right away; a change that only moves a "last upload" time is written at most once a minute, so
+/// a relaunch may show a last upload up to a minute older than it was.
+///
+/// `@unchecked Sendable`: the mutable state sits in `state`'s lock; `storage` is used only on
+/// `writeQueue`.
 final class SyncStatusTracker: @unchecked Sendable {
     static let didChange = Notification.Name("SyncStatusTracker.didChange")
     static let file = "upload/sync-status.json"
     static let maxMessageLength = 300
+    /// Minimum time between writes caused only by new "last upload" times.
+    static let minWriteInterval: TimeInterval = 60
+
+    private struct State {
+        var snapshot: SyncStatusSnapshot
+        /// Memory holds changes the file doesn't have yet.
+        var needsWrite = false
+        var lastWrite: Date?
+        /// When the next write is due, if one is scheduled.
+        var writeDue: Date?
+    }
 
     private let storage: FileStorage?
     private let now: @Sendable() -> Date
-    private let state: OSAllocatedUnfairLock<SyncStatusSnapshot>
+    private let state: OSAllocatedUnfairLock<State>
+    private let writeQueue = DispatchQueue(label: "SyncStatusTracker.write", qos: .utility)
 
     /// - Parameter storage: where the record is persisted; `nil` keeps it in memory only.
     init(storage: FileStorage?, now: @escaping @Sendable() -> Date = { Date() }) {
         self.storage = storage
         self.now = now
         let stored = storage?.retrieve(Self.file, as: SyncStatusSnapshot.self) ?? SyncStatusSnapshot()
-        state = OSAllocatedUnfairLock(initialState: stored)
+        state = OSAllocatedUnfairLock(initialState: State(snapshot: stored))
     }
 
     var snapshot: SyncStatusSnapshot {
-        state.withLock { $0 }
+        state.withLock { $0.snapshot }
     }
 
     /// Records a whole upload pass of `kind`: a failure if any part failed, a success if
@@ -225,7 +241,8 @@ final class SyncStatusTracker: @unchecked Sendable {
         let date = now()
         update { snapshot in
             snapshot[destination].lastSuccess[kind] = date
-            snapshot[destination].failures[kind] = nil
+            // Clearing a failure changes what the screen shows after a relaunch: write it now.
+            return snapshot[destination].failures.removeValue(forKey: kind) != nil
         }
     }
 
@@ -238,15 +255,70 @@ final class SyncStatusTracker: @unchecked Sendable {
         let failure = SyncFailure(kind: kind, message: String(message.prefix(Self.maxMessageLength)), date: now())
         update { snapshot in
             snapshot[destination].failures[kind] = failure
+            return true
         }
     }
 
-    private func update(_ change: (inout SyncStatusSnapshot) -> Void) {
-        // Unchecked: `change` and `storage` are used only while the lock is held.
-        state.withLockUnchecked { snapshot in
-            change(&snapshot)
-            storage?.save(snapshot, as: Self.file)
+    /// Writes pending changes now and waits for the write. For tests and orderly shutdown.
+    func flush() {
+        writeQueue.sync { write(force: true) }
+    }
+
+    /// Waits for writes that are already due. For tests.
+    func waitForPendingWrites() {
+        writeQueue.sync {}
+    }
+
+    /// - Parameter change: returns `true` when the change should reach the file right away.
+    private func update(_ change: (inout SyncStatusSnapshot) -> Bool) {
+        // Unchecked: `change` runs only while the lock is held.
+        let delay: TimeInterval? = state.withLockUnchecked { state in
+            let urgent = change(&state.snapshot)
+            state.needsWrite = true
+
+            let current = now()
+            let throttled = state.lastWrite.map { $0.addingTimeInterval(Self.minWriteInterval) } ?? current
+            let due = urgent ? current : max(current, throttled)
+            if let scheduled = state.writeDue, scheduled <= due {
+                return nil
+            }
+            state.writeDue = due
+            return due.timeIntervalSince(current)
+        }
+        if let delay, storage != nil {
+            writeQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.write(force: false)
+            }
         }
         Foundation.NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
+
+    /// Runs on `writeQueue`. Copies the latest snapshot under the lock and writes it outside.
+    private func write(force: Bool) {
+        guard let storage else { return }
+        let current = now()
+        enum Step { case idle, wait(TimeInterval), save(SyncStatusSnapshot) }
+        let step: Step = state.withLock { state in
+            guard state.needsWrite else { return .idle }
+            // An earlier timer that fired after a later write was scheduled, or a timer that fired a
+            // little before the clock reached its due time: wait for the due time.
+            if !force, let due = state.writeDue, due > current {
+                return .wait(due.timeIntervalSince(current))
+            }
+            state.needsWrite = false
+            state.writeDue = nil
+            state.lastWrite = current
+            return .save(state.snapshot)
+        }
+        switch step {
+        case .idle:
+            break
+        case let .wait(delay):
+            writeQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.write(force: false)
+            }
+        case let .save(snapshot):
+            storage.save(snapshot, as: Self.file)
+        }
     }
 }
