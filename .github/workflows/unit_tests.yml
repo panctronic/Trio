@@ -12,8 +12,10 @@ jobs:
     if: github.repository_owner == 'nightscout'
 
     steps:
+      # Keep in sync with the Xcode selected in build_trio.yml, so tests run
+      # with the same toolchain that builds the app users install.
       - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
 
       - name: Checkout code
         uses: actions/checkout@v5
@@ -64,13 +66,47 @@ jobs:
           fi
         shell: bash
 
+  swiftformat:
+    name: SwiftFormat (lint)
+    runs-on: macos-26
+    if: github.repository_owner == 'nightscout'
+
+    steps:
+      # Keep in sync with the Xcode selected in build_trio.yml.
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
+
+      # No submodules: they have their own formatting and are excluded anyway.
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Cache BuildTools (SwiftFormat)
+        uses: actions/cache@v5
+        with:
+          path: BuildTools/.build
+          key: ${{ runner.os }}-buildtools-${{ hashFiles('BuildTools/Package.swift', 'BuildTools/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-buildtools-
+
+      # The build phase that formats code is skipped when CI=true, so this is
+      # the only place formatting is enforced. --lint never modifies files; it
+      # lists every violation and fails the job. Only Swift files tracked by
+      # this repository are checked (submodule sources are not listed by
+      # `git ls-files`). To fix locally: scripts/swiftformat.sh <files>
+      - name: Check formatting
+        run: |
+          set -o pipefail
+          git ls-files -z '*.swift' | xargs -0 scripts/swiftformat.sh --lint
+
   test:
     name: Run Unit Tests
     runs-on: macos-26
     if: github.repository_owner == 'nightscout'
 
     env:
-      DESTINATION: "platform=iOS Simulator,name=iPhone 17,OS=26.2"
+      DESTINATION: "platform=iOS Simulator,name=iPhone 17,OS=26.5"  # simulator runtime bundled with the selected Xcode
       # Default DerivedData location — deliberately OUTSIDE the repo working
       # tree. The Swiftformat build phase formats "${SRCROOT}", so anything
       # placed inside the checkout (as an earlier revision did with
@@ -81,8 +117,10 @@ jobs:
       DERIVED_DATA: "~/Library/Developer/Xcode/DerivedData"
 
     steps:
+      # Keep in sync with the Xcode selected in build_trio.yml, so tests run
+      # with the same toolchain that builds the app users install.
       - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
 
       - name: Checkout code
         uses: actions/checkout@v5

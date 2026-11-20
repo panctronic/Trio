@@ -1,59 +1,59 @@
+import Foundation
+import Testing
+
 @testable import Trio
-import XCTest
 
-final class SettingsExportTests: XCTestCase {
-    func testCSVEscaping() {
-        // Test CSV escaping functionality
-        let testValue = "Test,Value\"With\nSpecial Characters"
-        let escaped = csvEscape(testValue)
-        let expected = "\"Test,Value\"\"With\nSpecial Characters\""
-        XCTAssertEqual(escaped, expected, "CSV escaping should handle commas, quotes, and newlines")
+/// Covers the CSV rendering used by `SettingsExport.StateModel.exportSettings`
+/// (`ExportSetting.csv`) and the export error descriptions.
+@Suite("Settings Export Tests") struct SettingsExportTests {
+    @Test("Values with commas, quotes or line breaks are quoted, embedded quotes doubled") func csvEscapingSpecialCharacters() {
+        #expect(ExportSetting.csvEscape("Test,Value\"With\nSpecial Characters") == "\"Test,Value\"\"With\nSpecial Characters\"")
+        #expect(ExportSetting.csvEscape("a,b") == "\"a,b\"")
+        #expect(ExportSetting.csvEscape("say \"hi\"") == "\"say \"\"hi\"\"\"")
+        #expect(ExportSetting.csvEscape("line\rbreak") == "\"line\rbreak\"")
     }
 
-    func testCSVEscapingSimple() {
-        // Test simple values don't get escaped
-        let testValue = "SimpleValue"
-        let escaped = csvEscape(testValue)
-        XCTAssertEqual(escaped, testValue, "Simple values should not be escaped")
+    @Test("Plain values are left unquoted") func csvEscapingSimple() {
+        #expect(ExportSetting.csvEscape("SimpleValue") == "SimpleValue")
+        #expect(ExportSetting.csvEscape("") == "")
+        #expect(ExportSetting.csvEscape("5.5 mmol/L; 0.1 U") == "5.5 mmol/L; 0.1 U")
     }
 
-    func testExportCSVStructure() {
-        // Test that the CSV has the expected header structure
-        let expectedHeader = "Setting Category,Subcategory,Setting Name,Value,Unit"
-        // This test would require mocking the settings manager and file storage
-        // For now, we verify the header format is correct
-        XCTAssertEqual(expectedHeader.components(separatedBy: ",").count, 5, "CSV header should have 5 columns")
+    @Test("CSV starts with a BOM and the five-column header") func csvHeader() {
+        let csv = ExportSetting.csv([])
+
+        #expect(csv == "\u{FEFF}Setting Category,Subcategory,Setting Name,Value,Unit\n")
+        #expect(ExportSetting.csvHeader.components(separatedBy: ",").count == 5)
     }
 
-    func testExportErrorTypes() {
-        // Test that our export error types are properly defined
-        let documentError = Settings.StateModel.ExportError.documentsDirectoryNotFound
-        XCTAssertNotNil(documentError.errorDescription, "Document error should have description")
+    @Test("Each setting becomes one escaped row in column order") func csvRows() {
+        let csv = ExportSetting.csv([
+            ExportSetting(category: "Therapy", subcategory: "Basal", name: "00:00", value: "0.85", unit: "U/hr"),
+            ExportSetting(category: "Algorithm", name: "Max IOB", value: "8"),
+            ExportSetting(category: "Presets", subcategory: "Pizza, large", name: "Note", value: "the \"big\" one")
+        ])
 
-        let writeError = Settings.StateModel.ExportError.fileWriteError(TestError.testError)
-        XCTAssertNotNil(writeError.errorDescription, "Write error should have description")
-
-        let unknownError = Settings.StateModel.ExportError.unknown("Test message")
-        XCTAssertNotNil(unknownError.errorDescription, "Unknown error should have description")
+        let lines = csv.components(separatedBy: "\n")
+        #expect(lines == [
+            "\u{FEFF}Setting Category,Subcategory,Setting Name,Value,Unit",
+            "Therapy,Basal,00:00,0.85,U/hr",
+            "Algorithm,,Max IOB,8,",
+            "Presets,\"Pizza, large\",Note,\"the \"\"big\"\" one\",",
+            ""
+        ])
     }
 
-    func testExportFileNaming() {
-        // Test that export files have the correct naming pattern
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let timestamp = formatter.string(from: Date())
-        let fileName = "TrioSettings_\(timestamp).csv"
+    @Test("Every export error has a user-facing description") func exportErrorDescriptions() {
+        let errors: [SettingsExport.StateModel.ExportError] = [
+            .documentsDirectoryNotFound,
+            .fileWriteError(TestError("disk full")),
+            .unknown("Test message")
+        ]
 
-        XCTAssertTrue(fileName.hasPrefix("TrioSettings_"), "File name should start with TrioSettings_")
-        XCTAssertTrue(fileName.hasSuffix(".csv"), "File name should end with .csv")
-        XCTAssertEqual(fileName.components(separatedBy: "_").count, 2, "File name should have one underscore")
-    }
-
-    // Helper function to test CSV escaping (extracted from Settings.StateModel)
-    private func csvEscape(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
-            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        for error in errors {
+            let description = error.errorDescription
+            #expect(description != nil)
+            #expect(description?.isEmpty == false)
         }
-        return value
     }
 }
