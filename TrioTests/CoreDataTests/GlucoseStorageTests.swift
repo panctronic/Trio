@@ -312,9 +312,9 @@ import Testing
         #expect(storage.alarm == nil, "Should not trigger any alarm")
     }
 
-    @Test("Upload queries cover each service's backlog window, oldest first") func testUploadBacklogWindows() async throws {
+    @Test("Upload queries cover each service's backlog window, the last day first") func testUploadBacklogWindows() async throws {
         let now = Date()
-        let daysAgo: [Double] = [0.1, 2, 6, 10, 29, 35]
+        let daysAgo: [Double] = [0.1, 0.5, 2, 6, 10, 29, 35]
         try await testContext.perform {
             for (index, days) in daysAgo.enumerated() {
                 let entry = GlucoseStored(context: testContext)
@@ -330,15 +330,38 @@ import Testing
         }
 
         // Nightscout: 7 days, so the 2- and 6-day-old readings that a 24 h window missed are included.
+        // The last day goes first, newest first; then the backlog, oldest first.
         let nightscout = try await storage.getGlucoseNotYetUploadedToNightscout().compactMap(\.sgv)
-        #expect(nightscout == [202, 201, 200])
+        #expect(nightscout == [200, 201, 203, 202])
 
         // Apple Health and Tidepool: 30 days.
         let health = try await storage.getGlucoseNotYetUploadedToHealth().compactMap(\.sgv)
-        #expect(health == [204, 203, 202, 201, 200])
+        #expect(health == [200, 201, 205, 204, 203, 202])
         let tidepool = try await storage.getGlucoseNotYetUploadedToTidepool()
-        #expect(tidepool.count == 5)
-        #expect(tidepool.map(\.startDate) == tidepool.map(\.startDate).sorted())
+        #expect(tidepool.count == 6)
+    }
+
+    @Test("The per-pass limit keeps the most recent readings") func testUploadBatchLimitKeepsRecent() async throws {
+        let now = Date()
+        let limit = UploadBacklog.maxRowsPerPass
+        try await testContext.perform {
+            // A full batch of backlog plus one fresh reading: the fresh one must not wait for the backlog.
+            for index in 0 ... limit {
+                let entry = GlucoseStored(context: testContext)
+                entry.id = UUID()
+                entry.date = index == limit ? now : now.addingTimeInterval(-3 * 24 * 3600 + Double(index) * 60)
+                entry.glucose = index == limit ? 99 : 150
+                entry.isManual = false
+                entry.isUploadedToNS = false
+                entry.isUploadedToHealth = false
+                entry.isUploadedToTidepool = false
+            }
+            try testContext.save()
+        }
+
+        let batch = try await storage.getGlucoseNotYetUploadedToNightscout()
+        #expect(batch.count == limit)
+        #expect(batch.first?.sgv == 99)
     }
 
     @Test("Sensor changes marked as uploaded are not offered again") func testCGMStateMarkedUploaded() async throws {

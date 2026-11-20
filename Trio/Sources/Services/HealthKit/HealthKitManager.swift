@@ -238,12 +238,14 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             }
 
             guard glucoseSamples.isNotEmpty else {
+                // nothing in these rows can be written; mark them so they don't block the queue
                 debug(.healthKit, "No glucose samples to upload")
+                await updateGlucoseAsUploaded(glucose)
                 return
             }
 
             // Attempt to save the blood glucose samples to Apple Health
-            try await healthKitStore.save(glucoseSamples)
+            try await saveDroppingRejected(glucoseSamples, label: "glucose samples")
             debug(.healthKit, "Uploaded \(glucoseSamples.count) glucose samples to Apple Health")
             syncStatusTracker.recordSuccess(.appleHealth, .glucose)
 
@@ -254,6 +256,14 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             warning(.healthKit, "Uploading glucose samples to Apple Health failed", error: error)
             syncStatusTracker.recordFailure(.appleHealth, .glucose, error: error)
         }
+    }
+
+    /// Saves `samples`; if Apple Health refuses the batch as invalid, saves it in halves and drops the
+    /// refused samples with a log line, so one bad sample can't block the rows queued behind it.
+    private func saveDroppingRejected(_ samples: [HKQuantitySample], label: String) async throws {
+        try await RejectionIsolatingUpload.sendDroppingRejected(
+            samples, label: label, category: .healthKit, isRejection: UploadRejection.isAppleHealthRejection
+        ) { try await self.healthKitStore.save($0) }
     }
 
     private func updateGlucoseAsUploaded(_ glucose: [BloodGlucose]) async {
@@ -359,11 +369,13 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
             // Attempt to save the samples to Apple Health
             guard samples.isNotEmpty else {
+                // nothing in these rows can be written; mark them so they don't block the queue
                 debug(.healthKit, "No carb samples to upload")
+                await updateCarbsAsUploaded(carbs)
                 return
             }
 
-            try await healthKitStore.save(samples)
+            try await saveDroppingRejected(samples, label: "carb samples")
             debug(.healthKit, "Uploaded \(samples.count) carb samples to Apple Health")
             syncStatusTracker.recordSuccess(.appleHealth, .carbs)
 
@@ -484,11 +496,13 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
             do {
                 guard insulinSamples.isNotEmpty else {
+                    // nothing in these rows can be written; mark them so they don't block the queue
                     debug(.healthKit, "No insulin samples to upload")
+                    await updateInsulinAsUploaded(insulinEvents)
                     return
                 }
 
-                try await healthKitStore.save(insulinSamples)
+                try await saveDroppingRejected(insulinSamples, label: "insulin samples")
                 debug(.healthKit, "Uploaded \(insulinSamples.count) insulin samples to Apple Health")
                 syncStatusTracker.recordSuccess(.appleHealth, .treatments)
                 await updateInsulinAsUploaded(insulinEvents)

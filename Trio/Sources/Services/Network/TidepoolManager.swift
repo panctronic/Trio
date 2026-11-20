@@ -355,7 +355,10 @@ extension BaseTidepoolManager {
             let syncCarb: [SyncCarbObject] = Array(chunk).map { $0.convertSyncCarb() }
 
             let result = await TidepoolUploadSerializer.awaitUpload("carbs") {
-                try await tidepoolService.uploadCarbData(created: syncCarb, updated: [], deleted: [])
+                // one malformed entry must not block the rest of the queue
+                try await RejectionIsolatingUpload.sendDroppingRejected(
+                    syncCarb, label: "carb entries", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadCarbData(created: $0, updated: [], deleted: []) }
             }
 
             switch result {
@@ -511,7 +514,10 @@ extension BaseTidepoolManager {
                 }
 
             let doseResult = await TidepoolUploadSerializer.awaitUpload("dose") {
-                try await tidepoolService.uploadDoseData(created: insulinDoseEvents, deleted: [])
+                // one malformed entry must not block the rest of the queue
+                try await RejectionIsolatingUpload.sendDroppingRejected(
+                    insulinDoseEvents, label: "dose entries", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadDoseData(created: $0, deleted: []) }
             }
             switch doseResult {
             case .success:
@@ -834,7 +840,10 @@ extension BaseTidepoolManager {
             guard await uploadSerializer.isCurrent(generation) else { return }
 
             let result = await TidepoolUploadSerializer.awaitUpload("glucose") {
-                try await tidepoolService.uploadGlucoseData(chunk)
+                // one malformed value must not block the rest of the queue
+                try await RejectionIsolatingUpload.sendDroppingRejected(
+                    chunk, label: "glucose values", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadGlucoseData($0) }
             }
 
             switch result {

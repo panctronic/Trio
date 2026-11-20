@@ -1001,10 +1001,17 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             // Upload in batches of 100, marking each batch as soon as it is accepted so a later
             // failure doesn't send the earlier batches again
-            for chunk in glucose.chunks(ofCount: 100) {
-                try await nightscout.uploadGlucose(Array(chunk))
-                await updateGlucoseAsUploaded(Array(chunk))
-            }
+            try await RejectionIsolatingUpload.run(
+                glucose,
+                chunkSize: 100,
+                isRejection: UploadRejection.isNightscoutRejection,
+                send: { try await nightscout.uploadGlucose($0) },
+                accepted: { await self.updateGlucoseAsUploaded($0) },
+                rejected: { refused, error in
+                    warning(.nightscout, "Nightscout refused \(refused.count) glucose values, not retrying them", error: error)
+                    await self.updateGlucoseAsUploaded(refused)
+                }
+            )
 
             info(.nightscout, "Uploaded \(glucose.count) glucose values")
             syncStatusTracker.recordSuccess(.nightscout, .glucose)
@@ -1061,18 +1068,28 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
 
         do {
-            for chunk in treatments.chunks(ofCount: 100) {
-                let response = try await site.api.uploadTreatments(Array(chunk))
-                let bolusIds = Set(chunk.filter { $0.insulin != nil }.compactMap(\.id))
-                NightscoutObjectIdStore.shared.record(
-                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: bolusIds),
-                    fromSite: site.url
-                )
-                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
-                // without its _id lookup having run, even if a later chunk fails.
-                await resolveMissingObjectIds(localIds: Array(bolusIds), site: site)
-                await updatePumpEventStoredsAsUploaded(Array(chunk))
-            }
+            var response = Data()
+            try await RejectionIsolatingUpload.run(
+                treatments,
+                chunkSize: 100,
+                isRejection: UploadRejection.isNightscoutRejection,
+                send: { response = try await site.api.uploadTreatments($0) },
+                accepted: { chunk in
+                    let bolusIds = Set(chunk.filter { $0.insulin != nil }.compactMap(\.id))
+                    NightscoutObjectIdStore.shared.record(
+                        NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: bolusIds),
+                        fromSite: site.url
+                    )
+                    // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                    // without its _id lookup having run, even if a later chunk fails.
+                    await self.resolveMissingObjectIds(localIds: Array(bolusIds), site: site)
+                    await self.updatePumpEventStoredsAsUploaded(chunk)
+                },
+                rejected: { refused, error in
+                    warning(.nightscout, "Nightscout refused \(refused.count) pump events, not retrying them", error: error)
+                    await self.updatePumpEventStoredsAsUploaded(refused)
+                }
+            )
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
             syncStatusTracker.recordSuccess(.nightscout, .treatments)
@@ -1144,18 +1161,28 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
 
         do {
-            for chunk in treatments.chunks(ofCount: 100) {
-                let response = try await site.api.uploadTreatments(Array(chunk))
-                let localIds = Set(chunk.compactMap(\.id))
-                NightscoutObjectIdStore.shared.record(
-                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: localIds),
-                    fromSite: site.url
-                )
-                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
-                // without its _id lookup having run, even if a later chunk fails.
-                await resolveMissingObjectIds(localIds: Array(localIds), site: site)
-                await updateCarbsAsUploaded(Array(chunk))
-            }
+            var response = Data()
+            try await RejectionIsolatingUpload.run(
+                treatments,
+                chunkSize: 100,
+                isRejection: UploadRejection.isNightscoutRejection,
+                send: { response = try await site.api.uploadTreatments($0) },
+                accepted: { chunk in
+                    let localIds = Set(chunk.compactMap(\.id))
+                    NightscoutObjectIdStore.shared.record(
+                        NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: localIds),
+                        fromSite: site.url
+                    )
+                    // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                    // without its _id lookup having run, even if a later chunk fails.
+                    await self.resolveMissingObjectIds(localIds: Array(localIds), site: site)
+                    await self.updateCarbsAsUploaded(chunk)
+                },
+                rejected: { refused, error in
+                    warning(.nightscout, "Nightscout refused \(refused.count) carb entries, not retrying them", error: error)
+                    await self.updateCarbsAsUploaded(refused)
+                }
+            )
 
             info(.nightscout, "Uploaded \(treatments.count) carb entries")
             syncStatusTracker.recordSuccess(.nightscout, .carbs)

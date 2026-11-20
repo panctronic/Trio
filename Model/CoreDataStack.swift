@@ -622,6 +622,57 @@ extension CoreDataStack {
         }
     }
 
+    /// Fetches at most `limit` rows waiting for upload and hands them to `body` on the context's queue:
+    /// first those with `key` at or after `recentSince`, newest first, then older ones, oldest first.
+    ///
+    /// Recent data goes out first, so a backlog never delays what followers see now, and the backlog
+    /// still drains from its oldest end once the recent rows are uploaded.
+    func fetchUploadBatchAndMap<T: NSManagedObject, R>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        limit: Int,
+        recentSince: Date = Date.oneDayAgo,
+        relationshipKeyPathsForPrefetching: [String]? = nil,
+        callingFunction: String = #function,
+        callingClass: String = #fileID,
+        _ body: @escaping @Sendable([T]) throws -> R
+    ) async throws -> R {
+        func request(_ boundary: String, ascending: Bool) -> NSFetchRequest<T> {
+            Self.makeFetchRequest(
+                entityName: String(describing: type),
+                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                    predicate,
+                    NSPredicate(format: "%K \(boundary) %@", key, recentSince as NSDate)
+                ]),
+                key: key,
+                ascending: ascending,
+                fetchLimit: limit,
+                batchSize: nil,
+                propertiesToFetch: nil,
+                relationshipKeyPathsForPrefetching: relationshipKeyPathsForPrefetching
+            )
+        }
+        // Built here and used only inside the perform block below; nothing else holds a reference to them.
+        nonisolated(unsafe) let recentRequest = request(">=", ascending: false)
+        nonisolated(unsafe) let backlogRequest = request("<", ascending: true)
+
+        return try await context.perform {
+            var objects: [T]
+            do {
+                objects = try context.fetch(recentRequest)
+                if objects.count < limit {
+                    backlogRequest.fetchLimit = limit - objects.count
+                    objects += try context.fetch(backlogRequest)
+                }
+            } catch let error as NSError {
+                throw CoreDataError.unexpectedError(error: error, function: callingFunction, file: callingClass)
+            }
+            return try body(objects)
+        }
+    }
+
     /// Fetches the object IDs of `type` on `context`.
     func fetchObjectIDs<T: NSManagedObject>(
         ofType type: T.Type,

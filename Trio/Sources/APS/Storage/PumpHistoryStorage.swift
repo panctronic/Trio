@@ -405,13 +405,12 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToNightscout() async throws -> [NightscoutTreatment] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToNightscout"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToNightscout,
             key: "timestamp",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxRowsPerPass,
+            limit: UploadBacklog.maxRowsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         ) { [self] fetchedPumpEvents in
             fetchedPumpEvents.map { event in
@@ -576,13 +575,12 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToHealth() async throws -> [PumpHistoryEvent] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToHealth"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToHealth,
             key: "timestamp",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxPumpEventsPerPass,
+            limit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         ) { fetchedPumpEvents in
             fetchedPumpEvents.map { event in
@@ -622,13 +620,12 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToTidepool() async throws -> [PumpHistoryEvent] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToTidepool"
-        return try await CoreDataStack.shared.fetchAndMap(
+        return try await CoreDataStack.shared.fetchUploadBatchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToTidepool,
             key: "timestamp",
-            ascending: true,
-            fetchLimit: UploadBacklog.maxPumpEventsPerPass,
+            limit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
         ) { fetchedPumpEvents in
             fetchedPumpEvents.map { event in
