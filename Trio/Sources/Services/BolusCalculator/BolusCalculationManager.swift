@@ -15,6 +15,32 @@ protocol BolusCalculationManager {
     ) async -> CalculationResult
 }
 
+/// The bolus calculator's safety rule: with very low current or forecast glucose, or a loop
+/// that has not run recently, no bolus is recommended and the treatment screens warn before
+/// a bolus is enacted. The calculator and the treatment views read it from here so they
+/// cannot disagree.
+enum BolusRecommendationGuard {
+    /// Glucose (current or lowest forecast) below this, in mg/dL, counts as very low.
+    static let veryLowGlucose: Decimal = 54
+    /// A last successful loop older than this counts as stale.
+    static let staleLoopInterval: TimeInterval = 15 * 60
+
+    static func isVeryLow(_ glucose: Decimal) -> Bool {
+        glucose < veryLowGlucose
+    }
+
+    /// True when the loop has never run or last ran more than `staleLoopInterval` before `now`.
+    static func isLoopStale(lastLoopDate: Date?, now: Date = Date()) -> Bool {
+        guard let lastLoopDate else { return true }
+        return now.timeIntervalSince(lastLoopDate) > staleLoopInterval
+    }
+
+    /// True when no bolus may be recommended.
+    static func blocksRecommendation(currentBG: Decimal, minPredBG: Decimal, lastLoopDate: Date?, now: Date = Date()) -> Bool {
+        isVeryLow(currentBG) || isVeryLow(minPredBG) || isLoopStale(lastLoopDate: lastLoopDate, now: now)
+    }
+}
+
 final class BaseBolusCalculationManager: BolusCalculationManager, Injectable {
     @Injected() private var apsManager: APSManager!
     @Injected() private var settingsManager: SettingsManager!
@@ -429,10 +455,12 @@ final class BaseBolusCalculationManager: BolusCalculationManager, Injectable {
 
         // the final result for recommended insulin amount
         var insulinCalculated: Decimal
-        let isLoopStale = Date().timeIntervalSince(input.lastLoopDate) > 15 * 60
-
         // don't recommend insulin when current glucose or minPredBG is < 54 or last sucessful loop was over 15 minutes ago
-        if input.currentBG < 54 || input.minPredBG < 54 || isLoopStale {
+        if BolusRecommendationGuard.blocksRecommendation(
+            currentBG: input.currentBG,
+            minPredBG: input.minPredBG,
+            lastLoopDate: input.lastLoopDate
+        ) {
             insulinCalculated = 0
             debug(.bolus, "Recommendation set to 0 U: BG or min predicted BG below 54 mg/dL, or last loop over 15 min ago")
         } else {

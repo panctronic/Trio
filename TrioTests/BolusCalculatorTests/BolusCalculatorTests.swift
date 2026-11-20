@@ -935,3 +935,26 @@ extension BolusCalculatorTests {
             )
     }
 }
+
+@Suite("Bolus recommendation guard") struct BolusRecommendationGuardTests {
+    @Test("Glucose below 54 mg/dL is very low, 54 is not") func veryLowBoundary() {
+        #expect(BolusRecommendationGuard.isVeryLow(53.9))
+        #expect(!BolusRecommendationGuard.isVeryLow(54))
+    }
+
+    @Test("A loop is stale after more than 15 minutes, or when it never ran") func staleLoopBoundary() {
+        let now = Date()
+        #expect(BolusRecommendationGuard.isLoopStale(lastLoopDate: nil, now: now))
+        #expect(!BolusRecommendationGuard.isLoopStale(lastLoopDate: now.addingTimeInterval(-15 * 60), now: now))
+        #expect(BolusRecommendationGuard.isLoopStale(lastLoopDate: now.addingTimeInterval(-15 * 60 - 1), now: now))
+    }
+
+    @Test("Any one condition blocks a recommendation") func blocksRecommendation() {
+        let now = Date()
+        let fresh = now.addingTimeInterval(-60)
+        #expect(!BolusRecommendationGuard.blocksRecommendation(currentBG: 120, minPredBG: 80, lastLoopDate: fresh, now: now))
+        #expect(BolusRecommendationGuard.blocksRecommendation(currentBG: 50, minPredBG: 80, lastLoopDate: fresh, now: now))
+        #expect(BolusRecommendationGuard.blocksRecommendation(currentBG: 120, minPredBG: 50, lastLoopDate: fresh, now: now))
+        #expect(BolusRecommendationGuard.blocksRecommendation(currentBG: 120, minPredBG: 80, lastLoopDate: nil, now: now))
+    }
+}

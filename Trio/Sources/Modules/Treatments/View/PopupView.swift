@@ -809,8 +809,7 @@ struct PopupView: View {
         /// Amount of insulin that can be dosed without exceeding Max IOB.
         let iobAvailable: Decimal = state.maxIOB - state.iob
         /// Checks if last loop was over 15 minutes ago.
-        let isLoopStale = state.lastLoopDate == nil ||
-            Date().timeIntervalSince(state.lastLoopDate!) > 15 * 60
+        let isLoopStale = BolusRecommendationGuard.isLoopStale(lastLoopDate: state.lastLoopDate)
 
         /// Computed property to determine if pump-compatible rounding was applied.
         /// Only relevant for positive insulin amounts.
@@ -836,10 +835,10 @@ struct PopupView: View {
             if isLoopStale {
                 Text("Last loop was > 15 m ago.")
                     .warningStyle(warningColor)
-            } else if state.currentBG < 54 {
+            } else if BolusRecommendationGuard.isVeryLow(state.currentBG) {
                 Text("Glucose is very low.")
                     .warningStyle(.red)
-            } else if state.minPredBG < 54 {
+            } else if BolusRecommendationGuard.isVeryLow(state.minPredBG) {
                 Text("Glucose forecast is very low.")
                     .warningStyle(warningColor)
             } else if state.factoredInsulin > state.maxBolus, state.maxBolus <= iobAvailable {
