@@ -536,7 +536,11 @@ extension Treatments {
             }
 
             guard isInsulinGiven else {
-                hideModal()
+                if isMealSaved {
+                    await updateDeterminationAfterMeal()
+                } else {
+                    hideModal()
+                }
                 return
             }
 
@@ -844,18 +848,39 @@ extension Treatments {
                 try await carbsStorage.storeCarbs(carbsToStore, areFetchedFromRemote: false)
                 info(.treatments, "Meal saved: carbs \(carbs) g, fat \(fat) g, protein \(protein) g")
 
-                // only perform determine basal sync if the user doesn't use the pump bolus, otherwise the enact bolus func in the APSManger does a sync
-                if amount <= 0 {
-                    await MainActor.run {
-                        self.isAwaitingDeterminationResult = true
-                    }
-                    try await apsManager.determineBasalSync()
-                }
+                // The determination runs separately (updateDeterminationAfterMeal, or the bolus's own): a failed
+                // determination must not read as unsaved carbs, which the user would then enter again
                 return true
             } catch {
                 warning(.treatments, "Saving meal failed", error: error)
                 return false
             }
+        }
+
+        /// Updates COB and the forecast for a meal saved without insulin, then closes the screen. If that fails the
+        /// carbs are still saved, and the user is told so, rather than invited to enter them again (double COB).
+        private func updateDeterminationAfterMeal() async {
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = true
+            }
+            do {
+                try await apsManager.determineBasalSync()
+                await MainActor.run {
+                    self.isAwaitingDeterminationResult = false
+                }
+                hideModal()
+            } catch {
+                warning(.treatments, "Determination after meal failed", error: error)
+                await showSubmissionFailure(Self.mealSavedButForecastFailedMessage(error: error))
+            }
+        }
+
+        /// The meal was saved and only the forecast update failed.
+        static func mealSavedButForecastFailedMessage(error: Error) -> String {
+            String(
+                localized: "The carbs were saved. Do not enter them again. Only updating the forecast failed: \(error.localizedDescription)",
+                comment: "Alert when a meal was saved but the following determination failed; the argument is the reason"
+            )
         }
 
         // MARK: - Presets

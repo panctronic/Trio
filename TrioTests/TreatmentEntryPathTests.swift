@@ -136,6 +136,13 @@ import Testing
         #expect(Treatments.StateModel.mealSavedBolusFailedMessage(for: nil) != failed)
     }
 
+    @Test("A failed forecast update after saving a meal says the carbs were saved") func testMealSavedForecastFailed() {
+        let error = NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "CGM warming up"])
+        let message = Treatments.StateModel.mealSavedButForecastFailedMessage(error: error)
+        #expect(message.contains("CGM warming up"))
+        #expect(message.contains("saved"), "The user must learn the carbs are already saved")
+    }
+
     @Test("A failed bolus without a meal shows the pump's reason") func testBolusFailedMessage() {
         let failed = Treatments.StateModel.bolusFailedMessage(for: .failed(message: "Rounds to 0 U", error: nil))
         #expect(failed.contains("Rounds to 0 U"))
