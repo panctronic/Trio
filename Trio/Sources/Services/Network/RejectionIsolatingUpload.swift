@@ -62,7 +62,7 @@ enum RejectionIsolatingUpload {
 extension RejectionIsolatingUpload {
     /// Sends `items` as one request. If the service rejects it as invalid, sends it in halves instead and
     /// drops the refused items with a log line. Throws only when nothing could be sent, so on success the
-    /// caller marks all `items` as handled.
+    /// caller marks all `items` as handled. Nothing is sent for an empty list.
     static func sendDroppingRejected<Item>(
         _ items: [Item],
         label: String,
@@ -70,10 +70,7 @@ extension RejectionIsolatingUpload {
         isRejection: (Error) -> Bool,
         send: ([Item]) async throws -> Void
     ) async throws {
-        guard items.isNotEmpty else {
-            try await send(items)
-            return
-        }
+        guard items.isNotEmpty else { return }
         try await run(
             items,
             chunkSize: items.count,

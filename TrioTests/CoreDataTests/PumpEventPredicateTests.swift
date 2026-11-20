@@ -173,7 +173,7 @@ import Testing
         )
     }
 
-    @Test("Health and Tidepool upload predicates span their window and skip non-insulin rows")
+    @Test("Health and Tidepool upload predicates span their window and pick the types each takes")
     func testHealthAndTidepoolUploadPredicates() async throws {
         let threeDaysAgo = Date().addingTimeInterval(-3 * 24 * 3600)
         let fortyDaysAgo = Date().addingTimeInterval(-40 * 24 * 3600)
@@ -182,6 +182,7 @@ import Testing
                 (PumpEvent.bolus, threeDaysAgo),
                 (PumpEvent.pumpSuspend, threeDaysAgo),
                 (PumpEvent.prime, threeDaysAgo),
+                (PumpEvent.journalCarbs, threeDaysAgo),
                 (PumpEvent.bolus, fortyDaysAgo)
             ] {
                 let event = PumpEventStored(context: testContext)
@@ -196,15 +197,24 @@ import Testing
             try testContext.save()
         }
 
-        for predicate in [NSPredicate.pumpEventsNotYetUploadedToHealth, NSPredicate.pumpEventsNotYetUploadedToTidepool] {
-            let rows = try await testContext.perform {
+        func types(_ predicate: NSPredicate) async throws -> Set<String> {
+            try await testContext.perform {
                 let request: NSFetchRequest<PumpEventStored> = PumpEventStored.fetchRequest()
                 request.predicate = predicate
-                return try testContext.fetch(request).map { ($0.type, $0.timestamp) }
+                return Set(try testContext.fetch(request).compactMap(\.type))
             }
-            #expect(rows.count == 1)
-            #expect(rows.first?.0 == PumpEvent.bolus.rawValue)
-            #expect(rows.first?.1 == threeDaysAgo)
         }
+
+        // Apple Health takes insulin only; Tidepool also takes device events. Neither reaches past its window.
+        #expect(try await types(NSPredicate.pumpEventsNotYetUploadedToHealth) == [PumpEvent.bolus.rawValue])
+        #expect(
+            try await types(NSPredicate.pumpEventsNotYetUploadedToTidepool)
+                == [PumpEvent.bolus.rawValue, PumpEvent.pumpSuspend.rawValue, PumpEvent.prime.rawValue]
+        )
+
+        // Device events come back from the Tidepool fetch, ready to map to Tidepool device events.
+        let events = try await storage.getPumpHistoryNotYetUploadedToTidepool()
+        #expect(Set(events.map(\.type)) == [.bolus, .pumpSuspend, .prime])
+        #expect(events.filter { $0.type != .bolus }.allSatisfy { $0.type.mapEventTypeToPumpEventType() != nil })
     }
 }

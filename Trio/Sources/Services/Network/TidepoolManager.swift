@@ -535,7 +535,10 @@ extension BaseTidepoolManager {
             guard await uploadSerializer.isCurrent(generation) else { return }
 
             let pumpResult = await TidepoolUploadSerializer.awaitUpload("pumpEvents") {
-                try await tidepoolService.uploadPumpEventData(pumpEvents)
+                // one malformed event must not block the rest of the queue
+                try await RejectionIsolatingUpload.sendDroppingRejected(
+                    pumpEvents, label: "pump events", category: .tidepool, isRejection: UploadRejection.isTidepoolRejection
+                ) { try await tidepoolService.uploadPumpEventData($0) }
             }
             switch pumpResult {
             case .success:

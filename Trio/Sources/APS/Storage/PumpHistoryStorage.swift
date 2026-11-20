@@ -659,7 +659,14 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
                     }
 
                 default:
-                    return nil
+                    // suspends, resumes, primes, rewinds, alarms and site changes go up as device events
+                    // (stored site changes map to the Nightscout-style type the Tidepool mapping knows)
+                    guard let id = event.id, let timestamp = event.timestamp,
+                          let type = event.type == PumpEvent.siteChange.rawValue
+                          ? EventType.nsSiteChange : event.type.flatMap(EventType.init(rawValue:)),
+                          type.mapEventTypeToPumpEventType() != nil
+                    else { return nil }
+                    return PumpHistoryEvent(id: id, type: type, timestamp: timestamp, note: event.note)
                 }
             }.compactMap { $0 }
         }
