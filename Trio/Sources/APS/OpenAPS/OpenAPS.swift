@@ -396,6 +396,14 @@ final class OpenAPS {
         }
     }
 
+    /// Average TDD of the last two hours, or `longTermAverage` when no TDD was stored in that time (the calculation
+    /// failed, or the app was not running). An empty window used to count as 0 U, which pulled the weighted TDD down to
+    /// a fraction of the real one and made Dynamic ISF run on a far too low TDD.
+    static func recentTDDAverage(recentTotal: Decimal, recentCount: Int, longTermAverage: Decimal) -> Decimal {
+        guard recentCount > 0 else { return longTermAverage }
+        return recentTotal / Decimal(recentCount)
+    }
+
     func prepareTrioCustomOrefVariables(on context: NSManagedObjectContext) async throws -> RawJSON {
         try await context.perform {
             // Retrieve user preferences
@@ -423,13 +431,16 @@ final class OpenAPS {
 
             // Fetch recent TDD data for the past two hours
             let recentTDDData = historicalTDDData.filter { ($0["date"] as? Date ?? Date()) >= twoHoursAgo }
-            let recentDataCount = max(recentTDDData.count, 1)
             let recentTotalTDD = recentTDDData.compactMap { ($0["total"] as? NSDecimalNumber)?.decimalValue }
                 .reduce(0, +)
 
             let currentTDD = historicalTDDData.last?["total"] as? Decimal ?? 0
-            let averageTDDLastTwoHours = recentTotalTDD / Decimal(recentDataCount)
             let averageTDDLastTenDays = totalTDD / Decimal(totalDaysCount)
+            let averageTDDLastTwoHours = OpenAPS.recentTDDAverage(
+                recentTotal: recentTotalTDD,
+                recentCount: recentTDDData.count,
+                longTermAverage: averageTDDLastTenDays
+            )
             let weightedTDD = weightPercentage * averageTDDLastTwoHours + (1 - weightPercentage) * averageTDDLastTenDays
 
             // Prepare Trio's custom oref variables

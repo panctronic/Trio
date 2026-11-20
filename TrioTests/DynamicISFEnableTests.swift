@@ -46,3 +46,15 @@ import Testing
         #expect(!enabled)
     }
 }
+
+@Suite("TDD failure handling") struct TDDFailureHandlingTests {
+    @Test("An empty two-hour window falls back to the long-term average, not 0 U") func emptyRecentWindowFallsBack() {
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 0, recentCount: 0, longTermAverage: 42) == 42)
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 90, recentCount: 2, longTermAverage: 42) == 45)
+    }
+
+    @Test("Repeated TDD failures alert on the third, then hourly") func alertCadence() {
+        let alerted = (1 ... 30).filter { BaseAPSManager.shouldAlertTDDFailure(consecutiveFailures: $0) }
+        #expect(alerted == [3, 15, 27])
+    }
+}

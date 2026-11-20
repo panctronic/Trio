@@ -589,12 +589,28 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Returns the object ID of the stored determination this run produced.
     @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
-        // TDD only feeds Dynamic ISF, which falls back to the stored history (and is turned off for the run when there
-        // is not enough of it), so a failed calculation must not stop the loop from dosing.
+        // TDD only feeds Dynamic ISF, which works from the stored TDD history (the two-hour average falls back to the
+        // ten-day one when no recent TDD was stored, and Dynamic ISF is off for the run without enough history), so a
+        // failed calculation must not stop the loop from dosing. Repeated failures are surfaced to the user.
         do {
             try await calculateAndStoreTDD()
+            transientCategoryLock.withLock { consecutiveTDDFailures = 0 }
         } catch {
             warning(.loop, "Calculating the total daily dose failed, determining without updating it", error: error)
+            let failures = transientCategoryLock.withLock { () -> Int in
+                consecutiveTDDFailures += 1
+                return consecutiveTDDFailures
+            }
+            if Self.shouldAlertTDDFailure(consecutiveFailures: failures) {
+                issueAlertForError(
+                    APSError.apsError(
+                        message: String(
+                            localized: "The total daily dose could not be calculated \(failures) times in a row. Trio keeps looping, with Dynamic ISF using the stored history. \(error.localizedDescription)"
+                        )
+                    ),
+                    category: .algorithmError
+                )
+            }
         }
 
         var invalidGlucoseError: String?
@@ -1062,6 +1078,14 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Errors arrive from the pump's queue, the loop task and bolus tasks at once; guarded by `transientCategoryLock`.
     private let transientCategoryLock = NSLock()
+    /// Guarded by `transientCategoryLock`.
+    private var consecutiveTDDFailures = 0
+
+    /// Alert on the third failure in a row (a quarter hour of loops), then once an hour while it lasts.
+    static func shouldAlertTDDFailure(consecutiveFailures: Int) -> Bool {
+        consecutiveFailures >= 3 && (consecutiveFailures - 3) % 12 == 0
+    }
+
     private var transientCategoryFirstSeen: [String: Date] = [:]
     private var transientCategoryCount: [String: Int] = [:]
     private static let transientDwellThreshold: TimeInterval = 60
