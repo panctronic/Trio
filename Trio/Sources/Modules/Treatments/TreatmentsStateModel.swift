@@ -680,8 +680,13 @@ extension Treatments {
                     // store external dose to pump history
                     await pumpHistoryStorage.storeExternalInsulinEvent(amount: amount, timestamp: date)
                     info(.bolus, "External insulin of \(amount) U logged")
-                    // perform determine basal sync
-                    try await apsManager.determineBasalSync()
+                    // The insulin is logged either way; a failed refresh must not show as a failed entry
+                    do {
+                        try await apsManager.determineBasalSync()
+                    } catch {
+                        warning(.bolus, "Determination after external insulin failed", error: error)
+                        await MainActor.run { self.isAwaitingDeterminationResult = false }
+                    }
                 }
             } catch {
                 warning(.bolus, "Authentication for external insulin failed", error: error)
