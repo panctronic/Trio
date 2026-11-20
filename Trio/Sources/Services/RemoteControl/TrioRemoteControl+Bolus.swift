@@ -8,7 +8,7 @@ extension TrioRemoteControl {
             return
         }
 
-        if let rejection = bolusLimitRejection(bolusAmount: bolusAmount) {
+        if let rejection = try await bolusLimitRejection(bolusAmount: bolusAmount) {
             await logError(rejection, payload: payload)
             return
         }
@@ -21,9 +21,19 @@ extension TrioRemoteControl {
         await enactRemoteBolus(payload, bolusAmount: bolusAmount)
     }
 
-    /// Max bolus and max IOB rejection message, or nil when the amount is within limits.
-    func bolusLimitRejection(bolusAmount: Decimal) -> String? {
-        switch bolusSafetyValidator.validateLimits(bolusAmount: bolusAmount) {
+    /// Max bolus and max IOB rejection message, or nil when the amount is within limits. A bolus in progress on the
+    /// pump and a remote bolus sent but not yet reported count toward IOB; one that is also stored already is counted
+    /// twice, which can only make the check stricter.
+    func bolusLimitRejection(bolusAmount: Decimal) async throws -> String? {
+        let pumpBolus = pumpBolusInProgress()
+        let pending = RemoteTreatmentGuard.activePendingBolus(
+            pendingRemoteBolus,
+            stored: [],
+            pumpBolusInProgress: pumpBolus,
+            now: Date()
+        )
+        let unrecorded = (pumpBolus?.units ?? 0) + (pending?.units ?? 0)
+        switch try await bolusSafetyValidator.validateLimits(bolusAmount: bolusAmount, unrecordedUnits: unrecorded) {
         case .allowed:
             return nil
         case let .rejected(reason):

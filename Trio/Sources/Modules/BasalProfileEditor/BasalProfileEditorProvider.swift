@@ -23,6 +23,10 @@ extension BasalProfileEditor {
             supportedBasalRates.filter { $0 > 0 }.map { Decimal($0).rounded(scale: 3) }
         }
 
+        func storeProfile(_ profile: [BasalProfileEntry]) {
+            storage.save(profile, as: OpenAPS.Settings.basalProfile)
+        }
+
         func saveProfile(_ profile: [BasalProfileEntry]) -> AnyPublisher<Void, Error> {
             guard let pump = deviceManager?.pumpManager else {
                 warning(.settings, "Basal profile not saved, no pump connected")

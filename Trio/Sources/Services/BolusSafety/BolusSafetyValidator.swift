@@ -10,8 +10,10 @@ protocol BolusSafetyValidator {
     /// - Parameter overriding: checks the user has seen fail and chosen to bolus through. Only checks whose
     ///   `canBeOverridden` is true are skipped.
     func validate(bolusAmount: Decimal, overriding: Set<BolusSafetyCheck>) async throws -> BolusSafetyResult
-    /// Max bolus and max IOB only, for callers that check recent treatments themselves.
-    func validateLimits(bolusAmount: Decimal) -> BolusSafetyResult
+    /// Max bolus and max IOB only, for callers that check recent treatments themselves. IOB includes boluses delivered
+    /// since it was calculated, plus `unrecordedUnits`: boluses the caller knows of that may not be stored yet (in
+    /// progress on the pump, or sent and not yet reported).
+    func validateLimits(bolusAmount: Decimal, unrecordedUnits: Decimal) async throws -> BolusSafetyResult
     func fetchTotalRecentBolusAmount(since date: Date) async throws -> Decimal
 }
 
@@ -107,6 +109,9 @@ struct BolusSafetyInputs: Equatable {
     let currentIOB: Decimal?
     /// Sum of bolus amounts delivered within the recent-bolus window (see `BolusSafetyEvaluator.recentBolusWindowMinutes`).
     let totalRecentBolus: Decimal
+    /// When `currentIOB` is nil because the IOB is too old: that old IOB plus every bolus since it was calculated. An
+    /// upper bound (old IOB has only decayed since), used for max IOB when the user confirmed past `.iobAvailable`.
+    var staleIOBEstimate: Decimal? = nil
 }
 
 enum BolusSafetyEvaluator {
@@ -151,7 +156,8 @@ enum BolusSafetyEvaluator {
     }
 
     /// - Parameter overriding: checks to skip; those that cannot be overridden are run regardless.
-    ///   With `.iobAvailable` overridden and no IOB, the max IOB check cannot run and is skipped too.
+    ///   With `.iobAvailable` overridden and IOB too old, max IOB is checked against `staleIOBEstimate`; only with no
+    ///   IOB at all is it skipped.
     static func evaluate(
         bolusAmount: Decimal,
         inputs: BolusSafetyInputs,
@@ -167,6 +173,8 @@ enum BolusSafetyEvaluator {
             }
         } else if !skipped.contains(.iobAvailable) {
             return .rejected(.iobUnavailable)
+        } else if let staleIOB = inputs.staleIOBEstimate, !skipped.contains(.maxIOB), (staleIOB + bolusAmount) > inputs.maxIOB {
+            return .rejected(.exceedsMaxIOB(currentIOB: staleIOB, maxIOB: inputs.maxIOB))
         }
         if !skipped.contains(.recentBolus), inputs.totalRecentBolus >= bolusAmount * recentBolusThreshold {
             return .rejected(.recentBolusWithinWindow(totalRecent: inputs.totalRecentBolus))
@@ -183,42 +191,41 @@ final class BaseBolusSafetyValidator: BolusSafetyValidator, Injectable {
         injectServices(resolver)
     }
 
-    /// Current IOB if it is fresh enough to check a bolus against; nil (treated as unavailable) otherwise.
-    private func usableCurrentIOB() -> Decimal? {
-        usableCurrentIOBSample()?.iob
-    }
-
-    /// Like `usableCurrentIOB`, with the time the IOB was calculated.
-    private func usableCurrentIOBSample() -> (iob: Decimal, date: Date)? {
-        let iobSample = iobService.currentIOBSample
-        guard let iobSample else { return nil }
-        guard BolusSafetyEvaluator.usableIOB(iobSample) != nil else {
+    /// The latest IOB plus every bolus delivered after it was calculated (and `unrecordedUnits`), split into a usable
+    /// value when the IOB is fresh enough, and an estimate when it is too old (see `BolusSafetyInputs.staleIOBEstimate`).
+    private func iobEstimate(unrecordedUnits: Decimal = 0) async throws
+        -> (current: Decimal?, stale: Decimal?, sampleDate: Date?)
+    {
+        guard let sample = iobService.currentIOBSample else { return (nil, nil, nil) }
+        let estimate = sample.iob + (try await fetchTotalRecentBolusAmount(since: sample.date)) + unrecordedUnits
+        guard BolusSafetyEvaluator.usableIOB(sample) != nil else {
             warning(
                 .bolus,
-                "Bolus check: IOB is \(Int(Date().timeIntervalSince(iobSample.date) / 60)) min old, treating it as unavailable"
+                "Bolus check: IOB is \(Int(Date().timeIntervalSince(sample.date) / 60)) min old, treating it as unavailable"
             )
-            return nil
+            return (nil, estimate, sample.date)
         }
-        return iobSample
+        return (estimate, nil, sample.date)
     }
 
-    func validateLimits(bolusAmount: Decimal) -> BolusSafetyResult {
+    func validateLimits(bolusAmount: Decimal, unrecordedUnits: Decimal) async throws -> BolusSafetyResult {
         BolusSafetyEvaluator.evaluateLimits(
             bolusAmount: bolusAmount,
             maxBolus: settingsManager.pumpSettings.maxBolus,
             maxIOB: settingsManager.preferences.maxIOB,
-            currentIOB: usableCurrentIOB()
+            currentIOB: try await iobEstimate(unrecordedUnits: unrecordedUnits).current
         )
     }
 
     func validate(bolusAmount: Decimal, overriding: Set<BolusSafetyCheck>) async throws -> BolusSafetyResult {
-        let iobSample = usableCurrentIOBSample()
-        let windowStart = BolusSafetyEvaluator.recentBolusWindowStart(now: Date(), iobDate: iobSample?.date)
+        let iob = try await iobEstimate()
+        let windowStart = BolusSafetyEvaluator.recentBolusWindowStart(now: Date(), iobDate: iob.current == nil ? nil : iob.sampleDate)
         let inputs = BolusSafetyInputs(
             maxBolus: settingsManager.pumpSettings.maxBolus,
             maxIOB: settingsManager.preferences.maxIOB,
-            currentIOB: iobSample?.iob,
-            totalRecentBolus: try await fetchTotalRecentBolusAmount(since: windowStart)
+            currentIOB: iob.current,
+            totalRecentBolus: try await fetchTotalRecentBolusAmount(since: windowStart),
+            staleIOBEstimate: iob.stale
         )
         return BolusSafetyEvaluator.evaluate(bolusAmount: bolusAmount, inputs: inputs, overriding: overriding)
     }
