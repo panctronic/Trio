@@ -386,23 +386,23 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
     }
 
     private func overcalibrate(entries: [BloodGlucose]) -> [BloodGlucose] {
-        // overcalibrate
-        var overcalibration: ((Int) -> (Double))?
+        guard let calibrationService else { return entries }
+        return Self.overcalibrate(entries: entries, with: calibrationService)
+    }
 
-        if let cal = calibrationService {
-            overcalibration = cal.calibrate
-        }
-
-        if let overcalibration = overcalibration {
-            return entries.map { entry in
-                var entry = entry
-                guard entry.glucose != nil else { return entry }
-                entry.glucose = Int(overcalibration(entry.glucose!))
-                entry.sgv = Int(overcalibration(entry.sgv!))
-                return entry
+    /// Applies the user's fingerstick calibration to sensor readings. A non-finite
+    /// calibrated value keeps the uncalibrated reading (`Int(Double.nan)` would trap).
+    static func overcalibrate(entries: [BloodGlucose], with calibrationService: CalibrationService) -> [BloodGlucose] {
+        entries.map { entry in
+            var entry = entry
+            guard let glucose = entry.glucose else { return entry }
+            let calibrated = calibrationService.calibrate(value: glucose, readingDate: entry.dateString)
+            entry.glucose = calibrated.isFinite ? Int(calibrated) : glucose
+            if let sgv = entry.sgv {
+                let calibratedSGV = sgv == glucose ? calibrated : calibrationService.calibrate(value: sgv)
+                entry.sgv = calibratedSGV.isFinite ? Int(calibratedSGV) : sgv
             }
-        } else {
-            return entries
+            return entry
         }
     }
 }
