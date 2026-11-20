@@ -298,11 +298,7 @@ final class BaseTempTargetsStorage: TempTargetsStorage, Injectable {
         return try await CoreDataStack.shared.fetchAndMap(
             ofType: TempTargetRunStored.self,
             onContext: context,
-            predicate: NSPredicate(
-                format: "endDate >= %@ AND isUploadedToNS == %@",
-                Date.nightscoutUploadWindowStart as NSDate,
-                false as NSNumber
-            ),
+            predicate: NSPredicate.adjustmentRunsNotYetUploadedToNightscout,
             key: "startDate",
             ascending: true
         ) { fetchedTempTargetRuns in

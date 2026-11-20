@@ -11,4 +11,14 @@ extension NSPredicate {
             false as NSNumber
         )
     }
+
+    /// Finished override and temp target runs (OverrideRunStored, TempTargetRunStored) that have not
+    /// reached Nightscout yet. The window applies to `endDate`.
+    static var adjustmentRunsNotYetUploadedToNightscout: NSPredicate {
+        NSPredicate(
+            format: "endDate >= %@ AND isUploadedToNS == %@",
+            Date.nightscoutUploadWindowStart as NSDate,
+            false as NSNumber
+        )
+    }
 }

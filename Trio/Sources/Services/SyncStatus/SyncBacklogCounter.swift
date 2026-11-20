@@ -25,13 +25,6 @@ struct SyncBacklogCounter {
     static func pendingQueries(for destination: SyncDestination, includeNightscoutGlucose: Bool = true) -> [PendingQuery] {
         switch destination {
         case .nightscout:
-            // Override and temp target runs: same predicate as
-            // `getOverrideRunsNotYetUploadedToNightscout` / `getTempTargetRunsNotYetUploadedToNightscout`.
-            let runsNotYetUploaded = NSPredicate(
-                format: "endDate >= %@ AND isUploadedToNS == %@",
-                Date.nightscoutUploadWindowStart as NSDate,
-                false as NSNumber
-            )
             var queries = [
                 PendingQuery(
                     kind: .treatments,
@@ -57,7 +50,7 @@ struct SyncBacklogCounter {
                 PendingQuery(
                     kind: .adjustments,
                     entityName: "OverrideRunStored",
-                    predicate: runsNotYetUploaded,
+                    predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"
                 ),
                 PendingQuery(
@@ -69,7 +62,7 @@ struct SyncBacklogCounter {
                 PendingQuery(
                     kind: .adjustments,
                     entityName: "TempTargetRunStored",
-                    predicate: runsNotYetUploaded,
+                    predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"
                 )
             ]
