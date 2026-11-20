@@ -66,6 +66,40 @@ jobs:
           fi
         shell: bash
 
+  swiftformat:
+    name: SwiftFormat (lint)
+    runs-on: macos-26
+    if: github.repository_owner == 'nightscout'
+
+    steps:
+      # Keep in sync with the Xcode selected in build_trio.yml.
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
+
+      # No submodules: they have their own formatting and are excluded anyway.
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Cache BuildTools (SwiftFormat)
+        uses: actions/cache@v5
+        with:
+          path: BuildTools/.build
+          key: ${{ runner.os }}-buildtools-${{ hashFiles('BuildTools/Package.swift', 'BuildTools/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-buildtools-
+
+      # The build phase that formats code is skipped when CI=true, so this is
+      # the only place formatting is enforced. --lint never modifies files; it
+      # lists every violation and fails the job. Only Swift files tracked by
+      # this repository are checked (submodule sources are not listed by
+      # `git ls-files`). To fix locally: scripts/swiftformat.sh <files>
+      - name: Check formatting
+        run: |
+          set -o pipefail
+          git ls-files -z '*.swift' | xargs -0 scripts/swiftformat.sh --lint
+
   test:
     name: Run Unit Tests
     runs-on: macos-26
