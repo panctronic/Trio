@@ -59,29 +59,31 @@ final class StateIntentRequest: BaseIntentsRequest {
         -> (dateGlucose: Date, glucose: String, trend: String, delta: String)
     {
         do {
-            let results = try CoreDataStack.shared.fetchObjectsAndWait(
-                ofType: GlucoseStored.self,
-                onContext: onContext,
-                predicate: NSPredicate.predicateFor30MinAgo,
-                key: "date",
-                ascending: false,
-                fetchLimit: 2
-            )
+            return try onContext.performAndWait {
+                let results = try CoreDataStack.shared.fetchObjectsAndWait(
+                    ofType: GlucoseStored.self,
+                    onContext: onContext,
+                    predicate: NSPredicate.predicateFor30MinAgo,
+                    key: "date",
+                    ascending: false,
+                    fetchLimit: 2
+                )
 
-            guard let lastValue = results.first else { throw StateIntentError.NoBG }
+                guard let lastValue = results.first else { throw StateIntentError.NoBG }
 
-            /// calculate delta
-            let lastGlucose = lastValue.glucose
-            let secondLastGlucose = results.dropFirst().first?.glucose
-            let delta = results.count > 1 ? (lastGlucose - (secondLastGlucose ?? 0)) : nil
-            /// formatting
-            let units = settingsManager.settings.units
-            let glucoseAsString = Decimal(lastGlucose).formatted(for: units)
+                /// calculate delta
+                let lastGlucose = lastValue.glucose
+                let secondLastGlucose = results.dropFirst().first?.glucose
+                let delta = results.count > 1 ? (lastGlucose - (secondLastGlucose ?? 0)) : nil
+                /// formatting
+                let units = settingsManager.settings.units
+                let glucoseAsString = Decimal(lastGlucose).formatted(for: units)
 
-            let directionAsString = lastValue.direction ?? String(localized: "none")
+                let directionAsString = lastValue.direction ?? String(localized: "none")
 
-            let deltaAsString = delta.map { Decimal($0).formattedDelta(for: units) } ?? "--"
-            return (lastValue.date ?? Date(), glucoseAsString, directionAsString, deltaAsString)
+                let deltaAsString = delta.map { Decimal($0).formattedDelta(for: units) } ?? "--"
+                return (lastValue.date ?? Date(), glucoseAsString, directionAsString, deltaAsString)
+            }
         } catch {
             warning(.storage, "Fetching latest glucose for shortcut failed", error: error)
             return (Date(), "", "", "")
@@ -89,17 +91,19 @@ final class StateIntentRequest: BaseIntentsRequest {
     }
 
     func getIobAndCob(onContext: NSManagedObjectContext) throws -> (iob: Double, cob: Double) {
-        let results = try CoreDataStack.shared.fetchObjectsAndWait(
-            ofType: OrefDetermination.self,
-            onContext: onContext,
-            predicate: NSPredicate.enactedDetermination,
-            key: "deliverAt",
-            ascending: false,
-            fetchLimit: 1
-        )
+        let cobAsDouble: Double = try onContext.performAndWait {
+            let results = try CoreDataStack.shared.fetchObjectsAndWait(
+                ofType: OrefDetermination.self,
+                onContext: onContext,
+                predicate: NSPredicate.enactedDetermination,
+                key: "deliverAt",
+                ascending: false,
+                fetchLimit: 1
+            )
+            return Double(truncating: (results.first?.cob ?? 0) as NSNumber)
+        }
 
         let iobAsDouble = Double(truncating: (iobService.currentIOB ?? 0.0) as NSNumber)
-        let cobAsDouble = Double(truncating: (results.first?.cob ?? 0) as NSNumber)
 
         return (iobAsDouble, cobAsDouble)
     }
