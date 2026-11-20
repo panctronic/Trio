@@ -92,6 +92,8 @@ extension Notification.Name {
         resolver.resolve(TrioAlertManager.self)!.replayUnacknowledgedAlerts()
 
         startTelemetry()
+        // so a credential replaced later this session is still redacted from exported logs
+        resolver.resolve(LogExport.self)?.rememberCurrentCredentials()
     }
 
     /// Telemetry starts here, not in `AppDelegate.didFinishLaunching`: resolving
@@ -425,6 +427,7 @@ extension Notification.Name {
                 requestAlarmAuthorizationIfNeeded()
                 if initState.complete {
                     performCleanupIfNecessary()
+                    resolver.resolve(LogExport.self)?.rememberCurrentCredentials()
                 }
             }
         }

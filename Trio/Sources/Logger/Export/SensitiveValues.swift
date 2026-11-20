@@ -105,6 +105,11 @@ struct SensitiveValues {
         }
     }
 
+    /// Values that already went through `add(_:_:)` (encoded forms included), e.g. remembered ones.
+    mutating func add(exact: [Redactor.ExactValue]) {
+        values.append(contentsOf: exact)
+    }
+
     mutating func addNightscout(url: String?, secret: String?) {
         if let url = url?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
             // Without the trailing slash, so request paths keep theirs
