@@ -768,7 +768,7 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
             if message[WatchMessageKeys.requestBolusRecommendation] as? Bool == true {
                 let carbs = message[WatchMessageKeys.carbs] as? Int ?? 0
 
-                var minPredBG: Decimal = 54
+                var minPredBG: Decimal = BolusRecommendationGuard.veryLowGlucose
 
                 Task { [weak self] in
                     guard let self = self else { return }
@@ -786,7 +786,7 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
                         )
 
                         await MainActor.run {
-                            minPredBG = determinationObjects.first?.minPredBGFromReason ?? 54
+                            minPredBG = determinationObjects.first?.minPredBGFromReason ?? BolusRecommendationGuard.veryLowGlucose
                         }
 
                     } catch let error as CoreDataError {

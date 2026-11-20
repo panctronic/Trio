@@ -67,9 +67,11 @@ import Testing
         let fixture = try Fixture()
         let batches = try [Self.entries(1 ... 40), Self.entries(1 ... 60), Self.entries(21 ... 80)].map { try fixture.stage($0) }
 
+        // Queued in arrival order, as receive(_:metadata:) does, then awaited together
+        let stores = batches.map { fixture.ingest.enqueue($0) }
         let acks = await withTaskGroup(of: UInt64.self) { group in
-            for batch in batches {
-                group.addTask { await fixture.ingest.ingest(batch) }
+            for store in stores {
+                group.addTask { await store.value }
             }
             return await group.reduce(into: []) { $0.append($1) }
         }
@@ -78,6 +80,16 @@ import Testing
         #expect(messages.count == 80)
         #expect(Set(messages).count == 80)
         #expect(acks.max() == 80)
+    }
+
+    @Test("Batches are stored in the order they were queued") func storesInQueueOrder() async throws {
+        let fixture = try Fixture()
+        let first = try fixture.ingest.enqueue(fixture.stage(Self.entries(1 ... 20)))
+        let second = try fixture.ingest.enqueue(fixture.stage(Self.entries(21 ... 40)))
+
+        #expect(await second.value == 40)
+        #expect(await first.value == 20)
+        #expect(fixture.sink.snapshot().map(\.message) == Self.entries(1 ... 40).map(\.message))
     }
 
     @Test("Entries survive a JSON lines round trip with millisecond dates") func codecRoundTrip() {

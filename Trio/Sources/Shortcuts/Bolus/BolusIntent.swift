@@ -5,10 +5,10 @@ import Swinject
 
 struct BolusIntent: AppIntent {
     // Title of the action in the Shortcuts app
-    static var title = LocalizedStringResource("Enact Bolus")
+    static let title = LocalizedStringResource("Enact Bolus")
 
     // Description of the action in the Shortcuts app
-    static var description = IntentDescription(.init("Allow to send a bolus to the app"))
+    static let description = IntentDescription(.init("Allow to send a bolus to the app"))
 
     @Parameter(
         title: LocalizedStringResource("Amount"),

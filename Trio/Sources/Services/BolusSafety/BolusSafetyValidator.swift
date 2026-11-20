@@ -94,7 +94,8 @@ extension BolusSafetyRejection {
         case .recentBolusWithinWindow:
             return String(
                 localized:
-                "Bolus blocked: a significant bolus was delivered within the last \(BolusSafetyEvaluator.recentBolusWindowMinutes) minutes."
+                "Bolus blocked: a significant bolus was delivered recently and may not be reflected in IOB yet.",
+                comment: "Shortcut and Watch message when a bolus is blocked because a bolus delivered since the IOB was last calculated (or in the last few minutes) is at least 20% of the requested amount"
             )
         }
     }

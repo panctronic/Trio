@@ -56,8 +56,17 @@ final class WatchLogIngest: @unchecked Sendable {
 
     // Returns the seq to acknowledge to the watch, once the records are stored
     @discardableResult func ingest(_ batch: Batch) async -> UInt64 {
+        await enqueue(batch).value
+    }
+
+    /// Queues the batch behind those already queued and returns the task storing it.
+    ///
+    /// Call this in the order the batches arrived. Only entries above the last stored seq are kept, so a batch stored
+    /// after a later one loses the entries the later one does not repeat; the watch would never resend them because
+    /// the later batch's ack covers them.
+    func enqueue(_ batch: Batch) -> Task<UInt64, Never> {
         // The watch resends unacknowledged entries, so batches overlap; storing them one at a time keeps the seq filter exact
-        let store = lastStore.withLock { previous in
+        lastStore.withLock { previous in
             let store = Task { [previous] in
                 _ = await previous?.value
                 return await self.store(batch)
@@ -65,7 +74,6 @@ final class WatchLogIngest: @unchecked Sendable {
             previous = store
             return store
         }
-        return await store.value
     }
 
     private func store(_ batch: Batch) async -> UInt64 {
@@ -102,8 +110,10 @@ final class WatchLogIngest: @unchecked Sendable {
             warning(.watch, "Rejected a watch log file with invalid metadata or over the size limit")
             return
         }
+        // Queued here, not in the detached task, so batches are stored in the order they arrived
+        let store = enqueue(batch)
         Task.detached(priority: .utility) {
-            let ack = await self.ingest(batch)
+            let ack = await store.value
             Self.send([WatchLogTransfer.ack: NSNumber(value: ack), WatchLogTransfer.installID: batch.installID])
         }
     }

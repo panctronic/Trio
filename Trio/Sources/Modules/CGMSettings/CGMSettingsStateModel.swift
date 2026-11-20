@@ -29,15 +29,12 @@ let cgmDefaultModel = CGMModel(
 
 extension CGMSettings {
     final class StateModel: BaseStateModel<Provider> {
-        // Singleton implementation
-        private static var _shared: StateModel?
-        static var shared: StateModel {
-            if _shared == nil {
-                _shared = StateModel()
-                _shared?.resolver = TrioApp.resolver
-            }
-            return _shared!
-        }
+        // Singleton, created on first use (a lazily initialised static is thread-safe)
+        static let shared: StateModel = {
+            let model = StateModel()
+            model.resolver = TrioApp.resolver
+            return model
+        }()
 
         @Injected() var fetchGlucoseManager: FetchGlucoseManager!
         @Injected() var pluginCGMManager: PluginManager!
