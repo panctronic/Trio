@@ -243,6 +243,39 @@ import Testing
         #expect(backfilled?.count == 1, "Backfilled CGM reading near a manual entry should be stored")
     }
 
+    @Test("A future-dated reading is not the latest reading") func testFutureDatedGlucoseIgnored() async throws {
+        // Given a real reading 5 minutes ago and a stored reading dated 30 minutes ahead
+        let realDate = Date().addingTimeInterval(-5 * 60)
+        let futureDate = Date().addingTimeInterval(30 * 60)
+        try await storage.storeGlucose([BloodGlucose(direction: .flat, date: 800, dateString: realDate, glucose: 101)])
+        try await storage.storeGlucose([BloodGlucose(direction: .flat, date: 801, dateString: futureDate, glucose: 250)])
+
+        // Then sync dates and the algorithm only see the real reading
+        #expect(abs(storage.syncDate().timeIntervalSince(realDate)) < 1)
+        let lastDate = try #require(storage.lastGlucoseDate())
+        #expect(abs(lastDate.timeIntervalSince(realDate)) < 1)
+        let algorithmGlucose = try await storage.getGlucoseForAlgorithm(shouldSmoothGlucose: false, fetchHours: 1)
+        // The in-memory store may hold readings from other tests in this suite
+        #expect(algorithmGlucose.contains { $0.sgv == 101 })
+        #expect(!algorithmGlucose.contains { $0.sgv == 250 })
+        #expect(algorithmGlucose.allSatisfy { $0.dateString <= Date().addingTimeInterval(60) })
+    }
+
+    @Test("Readings dated more than a minute ahead are dropped at ingestion") func testDropFutureDatedGlucose() {
+        let now = Date()
+        let readings = [
+            BloodGlucose(sgv: 100, date: 1, dateString: now.addingTimeInterval(-300), glucose: 100),
+            BloodGlucose(sgv: 101, date: 2, dateString: now.addingTimeInterval(30), glucose: 101),
+            BloodGlucose(sgv: 102, date: 3, dateString: now.addingTimeInterval(61), glucose: 102),
+            BloodGlucose(sgv: 103, date: 4, dateString: now.addingTimeInterval(30 * 60), glucose: 103)
+        ]
+
+        let (kept, dropped) = BaseFetchGlucoseManager.dropFutureDatedGlucose(readings, now: now)
+
+        #expect(kept.map(\.glucose) == [100, 101])
+        #expect(dropped.map(\.glucose) == [102, 103])
+    }
+
     private func insertManualGlucose(_ glucose: Int16, at date: Date) async throws {
         try await testContext.perform {
             let manualGlucose = GlucoseStored(context: testContext)

@@ -293,7 +293,34 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
         return Manager.init(rawState: rawState)
     }
 
-    private func glucoseStoreAndHeartDecision(syncDate: Date, glucose: [BloodGlucose]) async throws {
+    /// Splits off readings dated more than `NSPredicate.glucoseFutureTolerance` ahead
+    /// of `now`. A future-dated reading (wrong clock on the source) would become the
+    /// sync date, push every later real reading down the backfill path, which never
+    /// triggers a loop, and stand in for the current value in glucose alarms.
+    static func dropFutureDatedGlucose(_ glucose: [BloodGlucose], now: Date) -> (kept: [BloodGlucose], dropped: [BloodGlucose]) {
+        let latestAllowed = now.addingTimeInterval(NSPredicate.glucoseFutureTolerance)
+        var kept: [BloodGlucose] = []
+        var dropped: [BloodGlucose] = []
+        for entry in glucose {
+            if entry.dateString > latestAllowed {
+                dropped.append(entry)
+            } else {
+                kept.append(entry)
+            }
+        }
+        return (kept, dropped)
+    }
+
+    private func glucoseStoreAndHeartDecision(syncDate: Date, glucose allGlucose: [BloodGlucose]) async throws {
+        let now = Date()
+        let (glucose, futureGlucose) = Self.dropFutureDatedGlucose(allGlucose, now: now)
+        if let latest = futureGlucose.map(\.dateString).max() {
+            warning(
+                .cgm,
+                "Dropped \(futureGlucose.count) glucose readings dated in the future (latest \(latest), now \(now)); check the CGM source's clock"
+            )
+        }
+
         // calibration add if required only for sensor
         let newGlucose = overcalibrate(entries: glucose.filter { $0.sgv != nil })
 

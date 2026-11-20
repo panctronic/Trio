@@ -409,7 +409,10 @@ final class GlucoseAlertCoordinator: Injectable {
     /// `_PFAssertSafeMultiThreadedAccess_impl`).
     private func fetchLatestReadingMgDL() async -> Decimal? {
         let cutoff = Date().addingTimeInterval(-Self.readingFreshnessWindow)
-        let predicate = NSPredicate(format: "date >= %@", cutoff as NSDate)
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(format: "date >= %@", cutoff as NSDate),
+            NSPredicate.glucoseNotInFuture
+        ])
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "GlucoseAlertCoordinator.fetchLatestReading"
         do {
