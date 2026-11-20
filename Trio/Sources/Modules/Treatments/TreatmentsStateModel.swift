@@ -536,7 +536,11 @@ extension Treatments {
             }
 
             guard isInsulinGiven else {
-                hideModal()
+                if isMealSaved {
+                    await updateDeterminationAfterMeal()
+                } else {
+                    hideModal()
+                }
                 return
             }
 
@@ -553,12 +557,10 @@ extension Treatments {
             }
 
             guard glucoseStorage.isGlucoseDataFresh(date) else {
-                await MainActor.run {
-                    isAwaitingDeterminationResult = false
-                    showDeterminationFailureAlert = true
-                    determinationFailureMessage = "Glucose data is stale"
-                }
-                return hideModal()
+                // The insulin was given or logged; only the forecast is stale. A bare "Glucose data is stale" under
+                // "Error while processing Treatment" read as a failed bolus and invited a second one.
+                await showSubmissionFailure(Self.insulinGivenButGlucoseStaleMessage(isExternal: externalInsulin))
+                return
             }
 
             // The determination that would close the screen may have arrived while the bolus was being enacted
@@ -798,6 +800,11 @@ extension Treatments {
                 self.isAwaitingDeterminationResult = true
             }
 
+            guard amount > 0 else {
+                await showSubmissionFailure(ExternalInsulin.nothingToLogMessage(increment: settings.preferences.bolusIncrement))
+                return false
+            }
+
             // store external dose to pump history
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: amount, timestamp: date)
             info(.bolus, "External insulin of \(amount) U logged")
@@ -844,18 +851,52 @@ extension Treatments {
                 try await carbsStorage.storeCarbs(carbsToStore, areFetchedFromRemote: false)
                 info(.treatments, "Meal saved: carbs \(carbs) g, fat \(fat) g, protein \(protein) g")
 
-                // only perform determine basal sync if the user doesn't use the pump bolus, otherwise the enact bolus func in the APSManger does a sync
-                if amount <= 0 {
-                    await MainActor.run {
-                        self.isAwaitingDeterminationResult = true
-                    }
-                    try await apsManager.determineBasalSync()
-                }
+                // The determination runs separately (updateDeterminationAfterMeal, or the bolus's own): a failed
+                // determination must not read as unsaved carbs, which the user would then enter again
                 return true
             } catch {
                 warning(.treatments, "Saving meal failed", error: error)
                 return false
             }
+        }
+
+        /// Updates COB and the forecast for a meal saved without insulin, then closes the screen. If that fails the
+        /// carbs are still saved, and the user is told so, rather than invited to enter them again (double COB).
+        private func updateDeterminationAfterMeal() async {
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = true
+            }
+            do {
+                try await apsManager.determineBasalSync()
+                await MainActor.run {
+                    self.isAwaitingDeterminationResult = false
+                }
+                hideModal()
+            } catch {
+                warning(.treatments, "Determination after meal failed", error: error)
+                await showSubmissionFailure(Self.mealSavedButForecastFailedMessage(error: error))
+            }
+        }
+
+        /// The insulin was delivered (or logged) but glucose data is too old for the forecast to be updated.
+        static func insulinGivenButGlucoseStaleMessage(isExternal: Bool) -> String {
+            isExternal
+                ? String(
+                    localized: "The external insulin was logged. Do not log it again. Glucose data is stale, so the forecast was not updated.",
+                    comment: "Alert after logging external insulin when glucose data is stale"
+                )
+                : String(
+                    localized: "The bolus was delivered. Do not bolus again. Glucose data is stale, so the forecast was not updated.",
+                    comment: "Alert after a successful bolus when glucose data is stale"
+                )
+        }
+
+        /// The meal was saved and only the forecast update failed.
+        static func mealSavedButForecastFailedMessage(error: Error) -> String {
+            String(
+                localized: "The carbs were saved. Do not enter them again. Only updating the forecast failed: \(error.localizedDescription)",
+                comment: "Alert when a meal was saved but the following determination failed; the argument is the reason"
+            )
         }
 
         // MARK: - Presets
