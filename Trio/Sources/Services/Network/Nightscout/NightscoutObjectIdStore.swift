@@ -141,14 +141,30 @@ final class NightscoutObjectIdStore {
     }
 
     /// The cache for the configured site, created and persisted at `date` when there is none yet.
+    ///
+    /// A configured URL that reads back nil (Keychain not readable yet, or a read error) is not a site change: the
+    /// cache and its recording start stay as they are. Only a different non-nil URL, or `forgetSite()` when the user
+    /// removes Nightscout, starts a new cache, so a transient read failure can't wipe the `_id`s or move the
+    /// remote treatment guard's recording start forward.
     @discardableResult func snapshot(at date: Date = Date()) -> NightscoutObjectIdCache {
         let siteURL = currentSiteURL
         lock.lock()
         defer { lock.unlock() }
         var current = cache
+        guard let siteURL else { return current }
         if current.switchSite(to: siteURL, at: date) {
             cache = current
         }
         return current
+    }
+
+    /// The user removed the Nightscout configuration: drop the cache of the previous site.
+    func forgetSite(at date: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
+        var current = cache
+        if current.switchSite(to: nil, at: date) {
+            cache = current
+        }
     }
 }

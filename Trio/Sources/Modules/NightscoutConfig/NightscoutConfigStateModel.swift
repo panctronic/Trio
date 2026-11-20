@@ -168,7 +168,7 @@ extension NightscoutConfig {
         func delete() {
             keychain.removeObject(forKey: Config.urlKey)
             keychain.removeObject(forKey: Config.secretKey)
-            NightscoutObjectIdStore.shared.snapshot()
+            NightscoutObjectIdStore.shared.forgetSite()
             url = ""
             secret = ""
             isConnectedToNS = false
