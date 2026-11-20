@@ -663,6 +663,261 @@ extension CoreDataStack {
     }
 }
 
+// MARK: - Typed fetch requests
+
+/// Typed fetch helpers that keep managed objects on the queue of the context that fetched them.
+///
+/// The async variants run the fetch and the caller's `body` in a single `context.perform` block, so the
+/// managed objects handed to `body` never leave the context's queue. Return value types or
+/// `NSManagedObjectID`s from `body` and refetch on the destination context if objects are needed elsewhere.
+///
+/// The parameters mean the same as they always have for `fetchEntitiesAsync`: one sort descriptor on `key`,
+/// optional fetch limit (`0` or `nil` means no limit), batch size and relationship prefetching.
+extension CoreDataStack {
+    /// Fetches `type` on `context` and hands the results to `body` on the context's queue.
+    ///
+    /// Errors from the fetch itself are wrapped in `CoreDataError.unexpectedError`; errors thrown by `body`
+    /// are passed through unchanged.
+    func fetchAndMap<T: NSManagedObject, R>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        relationshipKeyPathsForPrefetching: [String]? = nil,
+        callingFunction: String = #function,
+        callingClass: String = #fileID,
+        _ body: @escaping @Sendable([T]) throws -> R
+    ) async throws -> R {
+        // Built here and used only inside the perform block below; nothing else holds a reference to it.
+        nonisolated(unsafe) let request: NSFetchRequest<T> = Self.makeFetchRequest(
+            entityName: String(describing: type),
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            propertiesToFetch: nil,
+            relationshipKeyPathsForPrefetching: relationshipKeyPathsForPrefetching
+        )
+
+        return try await context.perform {
+            let objects: [T]
+            do {
+                objects = try context.fetch(request)
+            } catch let error as NSError {
+                throw CoreDataError.unexpectedError(error: error, function: callingFunction, file: callingClass)
+            }
+            return try body(objects)
+        }
+    }
+
+    /// Fetches the object IDs of `type` on `context`.
+    func fetchObjectIDs<T: NSManagedObject>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        relationshipKeyPathsForPrefetching: [String]? = nil,
+        callingFunction: String = #function,
+        callingClass: String = #fileID
+    ) async throws -> [NSManagedObjectID] {
+        try await fetchAndMap(
+            ofType: type,
+            onContext: context,
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            relationshipKeyPathsForPrefetching: relationshipKeyPathsForPrefetching,
+            callingFunction: callingFunction,
+            callingClass: callingClass
+        ) { objects in
+            objects.map(\.objectID)
+        }
+    }
+
+    /// Fetches `type` on `context` and returns the managed objects themselves.
+    ///
+    /// The objects belong to `context`: only touch them inside `context.perform` (or on the main actor when
+    /// `context` is the view context). Prefer `fetchAndMap` or `fetchObjectIDs`.
+    func fetchObjects<T: NSManagedObject>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        relationshipKeyPathsForPrefetching: [String]? = nil,
+        callingFunction: String = #function,
+        callingClass: String = #fileID
+    ) async throws -> [T] {
+        try await fetchAndMap(
+            ofType: type,
+            onContext: context,
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            relationshipKeyPathsForPrefetching: relationshipKeyPathsForPrefetching,
+            callingFunction: callingFunction,
+            callingClass: callingClass
+        ) { objects in
+            objects
+        }
+    }
+
+    /// Fetches only `propertiesToFetch` of `type` as dictionaries and hands them to `body` on the context's queue.
+    ///
+    /// Key paths such as `"bolus.amount"` and `"objectID"` work as before. Errors from the fetch are wrapped in
+    /// `CoreDataError.unexpectedError`; errors thrown by `body` are passed through unchanged.
+    func fetchDictionaries<T: NSManagedObject, R>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        propertiesToFetch: [String],
+        callingFunction: String = #function,
+        callingClass: String = #fileID,
+        _ body: @escaping @Sendable([[String: Any]]) throws -> R
+    ) async throws -> R {
+        // Built here and used only inside the perform block below; nothing else holds a reference to it.
+        nonisolated(unsafe) let request: NSFetchRequest<NSFetchRequestResult> = Self.makeFetchRequest(
+            entityName: String(describing: type),
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            propertiesToFetch: propertiesToFetch,
+            relationshipKeyPathsForPrefetching: nil
+        )
+
+        return try await context.perform {
+            let rows: [[String: Any]]
+            do {
+                rows = try context.fetch(request) as? [[String: Any]] ?? []
+            } catch let error as NSError {
+                throw CoreDataError.unexpectedError(error: error, function: callingFunction, file: callingClass)
+            }
+            return try body(rows)
+        }
+    }
+
+    /// Synchronous fetch for code that is already running on `context`'s queue (for example inside
+    /// `context.perform`). Blocks until the fetch is done; errors are reported as `CoreDataError.fetchError`.
+    func fetchObjectsAndWait<T: NSManagedObject>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        callingFunction: String = #function,
+        callingClass: String = #fileID
+    ) throws -> [T] {
+        // Built here and used only inside the performAndWait block below; nothing else holds a reference to it.
+        nonisolated(unsafe) let request: NSFetchRequest<T> = Self.makeFetchRequest(
+            entityName: String(describing: type),
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            propertiesToFetch: nil,
+            relationshipKeyPathsForPrefetching: nil
+        )
+
+        return try context.performAndWait {
+            do {
+                return try context.fetch(request)
+            } catch {
+                throw CoreDataError.fetchError(function: callingFunction, file: callingClass)
+            }
+        }
+    }
+
+    /// Synchronous dictionary fetch for code that is already running on `context`'s queue.
+    /// Blocks until the fetch is done; errors are reported as `CoreDataError.fetchError`.
+    func fetchDictionariesAndWait<T: NSManagedObject>(
+        ofType type: T.Type,
+        onContext context: NSManagedObjectContext,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int? = nil,
+        batchSize: Int? = nil,
+        propertiesToFetch: [String],
+        callingFunction: String = #function,
+        callingClass: String = #fileID
+    ) throws -> [[String: Any]] {
+        // Built here and used only inside the performAndWait block below; nothing else holds a reference to it.
+        nonisolated(unsafe) let request: NSFetchRequest<NSFetchRequestResult> = Self.makeFetchRequest(
+            entityName: String(describing: type),
+            predicate: predicate,
+            key: key,
+            ascending: ascending,
+            fetchLimit: fetchLimit,
+            batchSize: batchSize,
+            propertiesToFetch: propertiesToFetch,
+            relationshipKeyPathsForPrefetching: nil
+        )
+
+        return try context.performAndWait {
+            do {
+                return try context.fetch(request) as? [[String: Any]] ?? []
+            } catch {
+                throw CoreDataError.fetchError(function: callingFunction, file: callingClass)
+            }
+        }
+    }
+
+    /// Builds the request shared by the fetch helpers. With `propertiesToFetch` the request returns dictionaries,
+    /// otherwise managed objects.
+    private static func makeFetchRequest<Result: NSFetchRequestResult>(
+        entityName: String,
+        predicate: NSPredicate,
+        key: String,
+        ascending: Bool,
+        fetchLimit: Int?,
+        batchSize: Int?,
+        propertiesToFetch: [String]?,
+        relationshipKeyPathsForPrefetching: [String]?
+    ) -> NSFetchRequest<Result> {
+        let request = NSFetchRequest<Result>(entityName: entityName)
+        request.sortDescriptors = [NSSortDescriptor(key: key, ascending: ascending)]
+        request.predicate = predicate
+        if let fetchLimit {
+            request.fetchLimit = fetchLimit
+        }
+        if let batchSize {
+            request.fetchBatchSize = batchSize
+        }
+        if let propertiesToFetch {
+            request.propertiesToFetch = propertiesToFetch
+            request.resultType = .dictionaryResultType
+        } else {
+            request.resultType = .managedObjectResultType
+        }
+        if let relationshipKeyPathsForPrefetching {
+            request.relationshipKeyPathsForPrefetching = relationshipKeyPathsForPrefetching
+        }
+        return request
+    }
+}
+
 // MARK: - Save
 
 /// This function is used when terminating the App to ensure any unsaved changes on the view context made their way to the persistent container
