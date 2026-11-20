@@ -42,11 +42,59 @@ Trio is a collaborative project, and contributions of all kinds are welcome. Whe
 
 ## Development guidelines
 
+### Building and testing locally
+
+Trio's pump, CGM and service integrations are git submodules, so clone with them:
+
+```sh
+git clone --recurse-submodules https://github.com/<you>/Trio.git
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+Open `Trio.xcworkspace` (not the `.xcodeproj`) in the Xcode version used by CI (see `.github/workflows/build_trio.yml`).
+
+- **Build:** select the `Trio` scheme and build (⌘B).
+- **Unit tests:** select the `Trio Tests` scheme and test (⌘U). From the command line:
+
+  ```sh
+  xcodebuild test -workspace Trio.xcworkspace -scheme "Trio Tests" \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -only-testing:TrioTests/SettingsExportTests   # optional: one class
+  ```
+
+- **Algorithm tests** (oref, runs on macOS without a simulator): `swift test --package-path AlgorithmPackage`.
+- **Time zone:** the `Trio Tests` scheme sets `TZ=Europe/Berlin` so date-dependent tests behave the same on every machine and in CI. To check behaviour in another zone, change that value locally under *Edit Scheme… › Test › Arguments* and don't commit the change.
+- **Logging stress tests** (`LoggingVolumeStressTests`, `LoggingLongRunStressTests`, `LoggingRobustnessStressTests` and `RedactorThroughputTests`) are skipped unless `TRIO_STRESS=1` is set, and CI never runs them. Run them before changing the logging pipeline:
+
+  ```sh
+  TEST_RUNNER_TRIO_STRESS=1 xcodebuild test -workspace Trio.xcworkspace -scheme "Trio Tests" \
+    -destination "platform=iOS Simulator,name=iPhone 17" \
+    -only-testing:TrioTests/LoggingVolumeStressTests
+  ```
+
+  (`xcodebuild` passes `TEST_RUNNER_`-prefixed variables to the tests without the prefix.) In Xcode, add `TRIO_STRESS` = `1` under *Edit Scheme… › Test › Arguments › Environment Variables* instead. They take several minutes.
+
+### Formatting
+
+Trio uses [SwiftFormat](https://github.com/nicklockwood/SwiftFormat), built from `BuildTools/` with the rules in `scripts/swiftformat.sh`.
+
+- Every local build of the `Trio` target formats the repository automatically (a build phase runs the script), so commit the formatting changes it makes to your files.
+- Format or check specific files from the repository root:
+
+  ```sh
+  scripts/swiftformat.sh path/to/File.swift          # format in place
+  scripts/swiftformat.sh --lint path/to/File.swift   # check only, changes nothing
+  ```
+
+- CI runs `scripts/swiftformat.sh --lint` on every Swift file in the repository and fails the pull request if anything is not formatted.
+- Submodules and generated code are excluded in the `.swiftformat` file at the repository root and are never reformatted; when adding a submodule, add it there too. Explicitly naming a file inside a submodule on the command line bypasses that, so don't.
+
 ### Coding conventions
 
 - Use Xcode and follow the existing formatting and style used throughout the codebase.
 - Keep indentation and formatting consistent in every file you change.
-- Format your code before committing.
+- Format your code before committing (see [Formatting](#formatting)); CI checks it.
 - Avoid unrelated formatting-only changes in files you are not otherwise modifying.
 - Prefer clear, readable code over clever or overly compact solutions.
 - Follow existing naming, file organization, and architectural patterns unless there is a good reason not to.

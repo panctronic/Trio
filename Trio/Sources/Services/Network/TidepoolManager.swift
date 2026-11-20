@@ -77,6 +77,9 @@ final class BaseTidepoolManager: TidepoolManager, Injectable {
 
     let viewContext = CoreDataStack.shared.persistentContainer.viewContext
 
+    /// Deletions Tidepool did not accept, retried on the upload passes.
+    private var pendingDeletions: PendingDeletionQueue!
+
     private var subscriptions = Set<AnyCancellable>()
     private var sessionSubscription: AnyCancellable?
     let tidepoolLoginRequired = CurrentValueSubject<Bool, Never>(false)
@@ -145,6 +148,11 @@ final class BaseTidepoolManager: TidepoolManager, Injectable {
     init(resolver: Resolver) {
         self.resolver = resolver
         injectServices(resolver)
+        pendingDeletions = PendingDeletionQueue(
+            storage: storage,
+            file: OpenAPS.Nightscout.pendingDeletionsTidepool,
+            category: .tidepool
+        )
         loadTidepoolManager()
 
         registerUploadControllers()
@@ -329,6 +337,7 @@ extension BaseTidepoolManager {
     /// Runs inside the serializer; fetches pending carbs at run time so coalesced requests lose nothing.
     private func performCarbsUpload(generation: Int) async {
         guard let tidepoolService = self.tidepoolService else { return }
+        await retryPendingDeletions(generation: generation)
 
         let carbs: [CarbsEntry]
         do {
@@ -382,37 +391,13 @@ extension BaseTidepoolManager {
     }
 
     func deleteCarbs(withSyncId id: UUID, carbs: Decimal, at: Date, enteredBy: String) {
-        guard let tidepoolService = self.tidepoolService else { return }
-
-        let syncCarb: [SyncCarbObject] = [SyncCarbObject(
-            absorptionTime: nil,
-            createdByCurrentApp: true,
-            foodType: nil,
-            grams: Double(carbs),
-            startDate: at,
-            uuid: id,
-            provenanceIdentifier: enteredBy,
-            syncIdentifier: id.uuidString,
-            syncVersion: nil,
-            userCreatedDate: nil,
-            userUpdatedDate: nil,
-            userDeletedDate: nil,
-            operation: LoopKit.Operation.delete,
-            addedDate: nil,
-            supercededDate: nil
-        )]
+        guard tidepoolService != nil else { return }
+        let deletion = PendingRemoteDeletion(kind: .carbs, id: id.uuidString, date: at, amount: carbs, enteredBy: enteredBy)
 
         Task { [weak self] in
             await self?.uploadSerializer.enqueue(.carbsDelete) { _ in
-                let result = await TidepoolUploadSerializer.awaitUpload("carbs-delete") {
-                    try await tidepoolService.uploadCarbData(created: [], updated: [], deleted: syncCarb)
-                }
-                switch result {
-                case .success:
-                    debug(.tidepool, "Carb entry deletion synced to Tidepool")
-                case let .failure(error):
-                    warning(.tidepool, "Tidepool carb entry deletion failed", error: error)
-                }
+                guard let self, await !self.sendDeletion(deletion) else { return }
+                await self.pendingDeletions.enqueue(deletion)
             }
         }
     }
@@ -431,6 +416,7 @@ extension BaseTidepoolManager {
     /// coalesced requests lose nothing.
     private func performDoseUpload(generation: Int) async {
         guard let tidepoolService = self.tidepoolService else { return }
+        await retryPendingDeletions(generation: generation)
 
         let events: [PumpHistoryEvent]
         do {
@@ -444,14 +430,12 @@ extension BaseTidepoolManager {
         do {
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "uploadDose"
-            // Fetch all temp basal entries from Core Data for the last 24 hours
+            // Fetch the temp basal entries around the events being uploaded
             let results = try await CoreDataStack.shared.fetchEntitiesAsync(
                 ofType: PumpEventStored.self,
                 onContext: context,
-                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
-                    NSPredicate.pumpHistoryLast24h,
-                    NSPredicate(format: "tempBasal != nil")
-                ]),
+                // the events can be up to the upload window old, not just from the last day
+                predicate: NSPredicate.tempBasalsAround(events.map(\.timestamp)),
                 key: "timestamp",
                 ascending: true,
                 batchSize: 50
@@ -584,30 +568,85 @@ extension BaseTidepoolManager {
     }
 
     func deleteInsulin(withSyncId id: String, amount: Decimal, at: Date) {
-        guard let tidepoolService = self.tidepoolService else { return }
-
-        // must be an array here, because `tidepoolService.uploadDoseData` expects a `deleted` array
-        let doseDataToDelete: [DoseEntry] = [DoseEntry(
-            type: .bolus,
-            startDate: at,
-            value: Double(amount),
-            unit: .units,
-            decisionId: nil,
-            syncIdentifier: id
-        )]
+        guard tidepoolService != nil else { return }
+        let deletion = PendingRemoteDeletion(kind: .insulin, id: id, date: at, amount: amount)
 
         Task { [weak self] in
             await self?.uploadSerializer.enqueue(.doseDelete) { _ in
-                let result = await TidepoolUploadSerializer.awaitUpload("dose-delete") {
-                    try await tidepoolService.uploadDoseData(created: [], deleted: doseDataToDelete)
-                }
-                switch result {
-                case .success:
-                    debug(.tidepool, "Dose deletion synced to Tidepool")
-                case let .failure(error):
-                    warning(.tidepool, "Tidepool dose deletion failed", error: error)
-                }
+                guard let self, await !self.sendDeletion(deletion) else { return }
+                await self.pendingDeletions.enqueue(deletion)
             }
+        }
+    }
+}
+
+/// Deletion retries
+extension BaseTidepoolManager {
+    /// Sends one deletion to Tidepool. Must run inside the upload serializer.
+    /// - Returns: `true` when Tidepool accepted it, or when there is nothing Tidepool can delete.
+    private func sendDeletion(_ deletion: PendingRemoteDeletion) async -> Bool {
+        guard let tidepoolService = self.tidepoolService else { return false }
+        // Entries without these can't be addressed; drop them rather than retry forever.
+        guard let date = deletion.date, let amount = deletion.amount else { return true }
+
+        let result: Result<Bool, Error>
+        switch deletion.kind {
+        case .carbs:
+            guard let uuid = UUID(uuidString: deletion.id) else { return true }
+            let syncCarb: [SyncCarbObject] = [SyncCarbObject(
+                absorptionTime: nil,
+                createdByCurrentApp: true,
+                foodType: nil,
+                grams: Double(amount),
+                startDate: date,
+                uuid: uuid,
+                provenanceIdentifier: deletion.enteredBy ?? CarbsEntry.local,
+                syncIdentifier: deletion.id,
+                syncVersion: nil,
+                userCreatedDate: nil,
+                userUpdatedDate: nil,
+                userDeletedDate: nil,
+                operation: LoopKit.Operation.delete,
+                addedDate: nil,
+                supercededDate: nil
+            )]
+            result = await TidepoolUploadSerializer.awaitUpload("carbs-delete") {
+                try await tidepoolService.uploadCarbData(created: [], updated: [], deleted: syncCarb)
+            }
+        case .insulin:
+            // must be an array here, because `tidepoolService.uploadDoseData` expects a `deleted` array
+            let doseDataToDelete: [DoseEntry] = [DoseEntry(
+                type: .bolus,
+                startDate: date,
+                value: Double(amount),
+                unit: .units,
+                decisionId: nil,
+                syncIdentifier: deletion.id
+            )]
+            result = await TidepoolUploadSerializer.awaitUpload("dose-delete") {
+                try await tidepoolService.uploadDoseData(created: [], deleted: doseDataToDelete)
+            }
+        case .glucose,
+             .healthSample:
+            return true
+        }
+
+        switch result {
+        case .success:
+            debug(.tidepool, "\(deletion.kind.rawValue) deletion synced to Tidepool")
+            return true
+        case let .failure(error):
+            warning(.tidepool, "Tidepool \(deletion.kind.rawValue) deletion failed", error: error)
+            return false
+        }
+    }
+
+    /// Retries deletions that failed earlier. Runs inside the upload serializer, like the uploads.
+    private func retryPendingDeletions(generation: Int) async {
+        guard tidepoolService != nil else { return }
+        await pendingDeletions.retryDue { deletion in
+            guard await self.uploadSerializer.isCurrent(generation) else { return false }
+            return await self.sendDeletion(deletion)
         }
     }
 }
@@ -777,6 +816,7 @@ extension BaseTidepoolManager {
     /// coalesced requests lose nothing.
     private func performGlucoseUpload(generation: Int) async {
         guard let tidepoolService = self.tidepoolService else { return }
+        await retryPendingDeletions(generation: generation)
 
         let glucose: [StoredGlucoseSample]
         do {

@@ -1304,22 +1304,7 @@ extension SettingsExport {
 
             // Convert data to the selected format and write to file
             do {
-                let content: String
-                // Helper function to escape CSV values
-                func csvEscape(_ value: String) -> String {
-                    if value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") {
-                        return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
-                    }
-                    return value
-                }
-
-                var csvContent = "\u{FEFF}Setting Category,Subcategory,Setting Name,Value,Unit\n"
-
-                for setting in exportSettings {
-                    csvContent +=
-                        "\(csvEscape(setting.category)),\(csvEscape(setting.subcategory)),\(csvEscape(setting.name)),\(csvEscape(setting.value)),\(csvEscape(setting.unit))\n"
-                }
-                content = csvContent
+                let content = ExportSetting.csv(exportSettings)
 
                 debug(.settings, "Writing settings export (\(content.count) characters)")
 

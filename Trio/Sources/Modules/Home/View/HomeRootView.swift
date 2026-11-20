@@ -51,6 +51,10 @@ extension Home {
         @State var chartReadoutDeterminationDate: Date? = nil
         /// Whether the readout owns the meal slot. The one thing the fade is keyed on.
         @State var isChartReadoutVisible = false
+        /// Basal pill text: 14 pt at the default text size, scaled with Dynamic Type.
+        @ScaledMetric(relativeTo: .subheadline) var basalPillFontSize: CGFloat = 14
+        /// Bolus progress panel symbols: 25 pt at the default text size, scaled with Dynamic Type.
+        @ScaledMetric(relativeTo: .title2) var bolusPanelSymbolSize: CGFloat = 25
 
         @FetchRequest(fetchRequest: OverrideStored.fetch(
             NSPredicate.lastActiveOverride,
@@ -102,13 +106,29 @@ extension Home {
             }
             .overlay(alignment: .topLeading) {
                 if let profileName = state.activeTherapyProfileName {
+                    let nextSwitch = NextTherapyProfileSwitch.find(
+                        in: state.scheduledProfileSwitches,
+                        activeProfileName: profileName,
+                        after: state.timerDate
+                    )
                     HStack(spacing: 3) {
                         Image(systemName: "person.crop.circle")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.caption2.weight(.semibold))
                         Text(profileName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .fontDesign(.rounded)
                             .lineLimit(1)
+                        if let nextSwitch {
+                            // when the scheduled switch happens; the name truncates before the time does
+                            Image(systemName: "arrow.right")
+                                .font(.caption2.weight(.semibold))
+                            Text(nextSwitch.shortTimeText(now: state.timerDate))
+                                .font(.footnote.weight(.semibold))
+                                .fontDesign(.rounded)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .layoutPriority(1)
+                        }
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -117,7 +137,11 @@ extension Home {
                     .frame(height: chartHeight * 0.10)
                     .padding(.leading, 16)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("Active profile \(profileName)"))
+                    .accessibilityLabel(Text(
+                        [String(localized: "Active profile \(profileName)"), nextSwitch?.text(now: state.timerDate)]
+                            .compactMap { $0 }
+                            .joined(separator: ", ")
+                    ))
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -127,11 +151,13 @@ extension Home {
                     HStack(spacing: 3) {
                         if basal.isManual {
                             Image(systemName: "hand.raised.fill")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption2.weight(.semibold))
                         }
                         Text(basal.label)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: basalPillFontSize, weight: .semibold))
                             .fontDesign(.rounded)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .foregroundStyle(basal.isManual ? Color.loopManualTemp : Color.insulin)
                     .padding(.horizontal, 8)

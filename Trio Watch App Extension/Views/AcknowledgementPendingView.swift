@@ -35,7 +35,7 @@ struct AcknowledgementPendingView: View {
                 VStack {
                     if state.isMealBolusCombo {
                         ProgressView()
-                        Text(state.mealBolusStep.rawValue).multilineTextAlignment(.center)
+                        Text(state.mealBolusStep.localizedDescription).multilineTextAlignment(.center)
                     } else if state.showAcknowledgmentBanner {
                         statusIcon.padding()
                         Text(state.acknowledgmentMessage).multilineTextAlignment(.center)
@@ -68,6 +68,16 @@ struct AcknowledgementPendingView: View {
     }
 }
 
+private extension MealBolusStep {
+    /// The raw values are fixed English; show the translated text.
+    var localizedDescription: String {
+        switch self {
+        case .savingCarbs: String(localized: "Saving Carbs...", comment: "Watch progress while carbs are saved")
+        case .enactingBolus: String(localized: "Enacting Bolus...", comment: "Watch progress while a bolus is sent")
+        }
+    }
+}
+
 /// Shown when the phone blocked a bolus on a safety check the user may bolus through, as on the main bolus screen.
 /// The user confirms with the digital crown again, always at the slower step, before the bolus is sent back.
 private struct BolusOverrideConfirmationView: View {
@@ -77,6 +87,7 @@ private struct BolusOverrideConfirmationView: View {
 
     @State private var confirmationProgress: Double = 0
     @FocusState private var isCrownFocused: Bool
+    @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverEnabled
 
     var body: some View {
         let bolusAmount = Double(truncating: pendingBolusOverride.amount as NSNumber)
@@ -101,8 +112,25 @@ private struct BolusOverrideConfirmationView: View {
             ProgressView(value: confirmationProgress, total: 1.0)
                 .tint(confirmationProgress >= 1.0 ? .orange : .gray)
                 .padding(.horizontal)
+                // always the slower step, like the crown here
+                .bolusConfirmationAccessibility(
+                    progress: $confirmationProgress,
+                    step: BolusConfirmationView.voiceOverConfirmationStep(confirmBolusFaster: false),
+                    hint: String(
+                        localized: "Swipe up repeatedly to fill the bar and bolus anyway. Swipe down to step back.",
+                        comment: "Accessibility hint for the watch bar that confirms a bolus despite a safety warning"
+                    )
+                )
 
-            Text("To bolus anyway, dial crown.").font(.footnote)
+            Text(
+                isVoiceOverEnabled
+                    ? String(
+                        localized: "To bolus anyway, swipe up on the bar until it is full.",
+                        comment: "Watch bolus override confirmation with VoiceOver"
+                    )
+                    : String(localized: "To bolus anyway, dial crown.")
+            )
+            .font(.footnote)
 
             Button("Cancel") {
                 state.pendingBolusOverride = nil

@@ -31,6 +31,18 @@ import Testing
         )
     }
 
+    @Test("An edit may not add a problem, but an existing one elsewhere does not block it") func editProblems() {
+        let tooHighBasal = TherapyProfileFixtures.profile("Live", basal: [(0, 3.5)])
+        let fine = TherapyProfileFixtures.profile("Live")
+        // Introducing a basal above max basal is refused.
+        #expect(TherapyProfileValidator.validateEdit(from: fine, to: tooHighBasal, basalLimits: limits) != nil)
+        // Changing carb ratios while the basal was already too high is allowed.
+        let edited = TherapyProfileFixtures.profile("Live", basal: [(0, 3.5)], carbratio: [(0, 8)])
+        #expect(TherapyProfileValidator.validateEdit(from: tooHighBasal, to: edited, basalLimits: limits) == nil)
+        // Fixing the basal is allowed too.
+        #expect(TherapyProfileValidator.validateEdit(from: tooHighBasal, to: fine, basalLimits: limits) == nil)
+    }
+
     @Test("Max basal itself is accepted") func maxBasalAccepted() {
         #expect(
             TherapyProfileValidator

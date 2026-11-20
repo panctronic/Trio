@@ -54,6 +54,10 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     @Injected() private var carbsStorage: CarbsStorage!
     @Injected() private var pumpHistoryStorage: PumpHistoryStorage!
     @Injected() private var deviceDataManager: DeviceDataManager!
+    @Injected() private var fileStorage: FileStorage!
+
+    /// Deletions Apple Health did not accept, retried on the glucose upload pass.
+    private var pendingDeletions: PendingDeletionQueue!
 
     let viewContext = CoreDataStack.shared.persistentContainer.viewContext
 
@@ -121,6 +125,11 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
     init(resolver: Resolver) {
         injectServices(resolver)
+        pendingDeletions = PendingDeletionQueue(
+            storage: fileStorage,
+            file: OpenAPS.Nightscout.pendingDeletionsAppleHealth,
+            category: .healthKit
+        )
 
         registerUploadControllers()
 
@@ -189,6 +198,7 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     // Glucose Upload
 
     func uploadGlucose() async {
+        await retryPendingDeletions()
         do {
             let glucose = try await glucoseStorage.getGlucoseNotYetUploadedToHealth()
             await uploadGlucose(glucose)
@@ -406,10 +416,8 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             let fetchedInsulinEntries = try await CoreDataStack.shared.fetchEntitiesAsync(
                 ofType: PumpEventStored.self,
                 onContext: context,
-                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
-                    NSPredicate.pumpHistoryLast24h,
-                    NSPredicate(format: "tempBasal != nil")
-                ]),
+                // the events can be up to the upload window old, not just from the last day
+                predicate: NSPredicate.tempBasalsAround(insulinEvents.map(\.timestamp)),
                 key: "timestamp",
                 ascending: true,
                 batchSize: 50
@@ -666,35 +674,16 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
               checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType)
         else { return }
 
-        let predicate = HKQuery.predicateForObjects(
-            withMetadataKey: HKMetadataKeySyncIdentifier,
-            operatorType: .equalTo,
-            value: syncID
-        )
-
-        do {
-            try await deleteObjects(of: sampleType, predicate: predicate)
-            debug(.healthKit, "Deleted glucose sample \(syncID) from Apple Health")
-        } catch {
-            warning(.healthKit, "Deleting glucose sample \(syncID) from Apple Health failed", error: error)
-        }
+        await deleteOrQueue(PendingRemoteDeletion(kind: .glucose, id: syncID), sampleType: sampleType)
     }
 
     func deleteMealData(byID id: String, sampleType: HKSampleType) async {
         guard settingsManager.settings.useAppleHealth else { return }
 
-        let predicate = HKQuery.predicateForObjects(
-            withMetadataKey: HKMetadataKeySyncIdentifier,
-            operatorType: .equalTo,
-            value: id
+        await deleteOrQueue(
+            PendingRemoteDeletion(kind: .healthSample, id: id, sampleType: sampleType.identifier),
+            sampleType: sampleType
         )
-
-        do {
-            try await deleteObjects(of: sampleType, predicate: predicate)
-            debug(.healthKit, "Deleted carb sample \(id) from Apple Health")
-        } catch {
-            warning(.healthKit, "Deleting carb sample \(id) from Apple Health failed", error: error)
-        }
     }
 
     func deleteInsulin(syncID: String) async {
@@ -706,17 +695,51 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             return
         }
 
+        await deleteOrQueue(PendingRemoteDeletion(kind: .insulin, id: syncID), sampleType: sampleType)
+    }
+
+    /// Deletes the samples with the deletion's sync identifier, queueing it for a retry on failure
+    /// (e.g. Apple Health is not accessible while the device is locked).
+    private func deleteOrQueue(_ deletion: PendingRemoteDeletion, sampleType: HKSampleType) async {
+        if await !deleteSamples(deletion, sampleType: sampleType) {
+            await pendingDeletions.enqueue(deletion)
+        }
+    }
+
+    private func deleteSamples(_ deletion: PendingRemoteDeletion, sampleType: HKSampleType) async -> Bool {
         let predicate = HKQuery.predicateForObjects(
             withMetadataKey: HKMetadataKeySyncIdentifier,
             operatorType: .equalTo,
-            value: syncID
+            value: deletion.id
         )
 
         do {
             try await deleteObjects(of: sampleType, predicate: predicate)
-            debug(.healthKit, "Deleted insulin sample \(syncID) from Apple Health")
+            debug(.healthKit, "Deleted \(deletion.kind.rawValue) sample \(deletion.id) from Apple Health")
+            return true
         } catch {
-            warning(.healthKit, "Deleting insulin sample \(syncID) from Apple Health failed", error: error)
+            warning(.healthKit, "Deleting \(deletion.kind.rawValue) sample \(deletion.id) from Apple Health failed", error: error)
+            return false
+        }
+    }
+
+    private func sampleType(for deletion: PendingRemoteDeletion) -> HKSampleType? {
+        switch deletion.kind {
+        case .glucose: return AppleHealthConfig.healthBGObject
+        case .insulin: return AppleHealthConfig.healthInsulinObject
+        case .healthSample:
+            return deletion.sampleType.flatMap { HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: $0)) }
+        case .carbs: return AppleHealthConfig.healthCarbObject
+        }
+    }
+
+    /// Retries deletions that failed earlier; runs with the glucose upload, which happens every few minutes.
+    private func retryPendingDeletions() async {
+        guard settingsManager.settings.useAppleHealth else { return }
+        await pendingDeletions.retryDue { deletion in
+            // A type that can't be resolved can't be deleted; drop the entry.
+            guard let sampleType = self.sampleType(for: deletion) else { return true }
+            return await self.deleteSamples(deletion, sampleType: sampleType)
         }
     }
 

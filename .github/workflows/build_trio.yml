@@ -7,8 +7,9 @@ on:
     #   Later logic builds if there are updates or if it is the 2nd Sunday of the month
     - cron: "43 6 * * 0" # Sunday at UTC 06:43
 
+# GH_PAT is deliberately NOT set workflow-wide: it is passed only to the steps
+# that use it, so steps like `bundle install` never see it in their environment.
 env:
-  GH_PAT: ${{ secrets.GH_PAT }}
   UPSTREAM_REPO: nightscout/Trio
   UPSTREAM_BRANCH: ${{ github.ref_name }} # branch on upstream repository to sync from (replace with specific branch name if needed)
   TARGET_BRANCH: ${{ github.ref_name }} # target branch on fork to be kept in sync
@@ -29,6 +30,8 @@ jobs:
 
       - name: Access
         id: workflow-permission
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           # Validate Access Token
           
@@ -100,7 +103,7 @@ jobs:
           steps.workflow-permission.outputs.has_permission == 'true' &&
           vars.SCHEDULED_SYNC != 'false' && github.repository_owner != 'nightscout'
         id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.2
+        uses: aormsby/Fork-Sync-With-Upstream-action@c935fe4428607f3f2bf10da49281044bbfcc9037 # v3.4.2
         with:
           target_sync_branch: ${{ env.TARGET_BRANCH }}
           shallow_since: 6 months ago
@@ -198,6 +201,7 @@ jobs:
         (vars.SCHEDULED_BUILD != 'false' && needs.check_status.outputs.IS_SECOND_IN_MONTH == 'true') ||
         (vars.SCHEDULED_SYNC != 'false' && needs.check_status.outputs.NEW_COMMITS == 'true' )
     steps:
+      # Keep in sync with the Xcode selected in unit_tests.yml.
       - name: Select Xcode version
         run: "sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer"
       

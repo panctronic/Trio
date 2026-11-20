@@ -58,6 +58,10 @@ extension OpenAPS {
         static let uploadedSettings = "upload/uploaded-settings.json"
         static let uploadedManualGlucose = "upload/uploaded-manual-readings.json"
         static let uploadedNotes = "upload/uploaded-notes.json"
+        /// Failed remote deletions waiting for a retry, one file per service.
+        static let pendingDeletionsNightscout = "upload/pending-deletions-nightscout.json"
+        static let pendingDeletionsTidepool = "upload/pending-deletions-tidepool.json"
+        static let pendingDeletionsAppleHealth = "upload/pending-deletions-apple-health.json"
     }
 
     enum Trio {

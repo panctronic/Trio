@@ -172,4 +172,39 @@ import Testing
             "Pump-reported scheduled basal must stay excluded from the oref input"
         )
     }
+
+    @Test("Health and Tidepool upload predicates span their window and skip non-insulin rows")
+    func testHealthAndTidepoolUploadPredicates() async throws {
+        let threeDaysAgo = Date().addingTimeInterval(-3 * 24 * 3600)
+        let fortyDaysAgo = Date().addingTimeInterval(-40 * 24 * 3600)
+        try await testContext.perform {
+            for (type, date) in [
+                (PumpEvent.bolus, threeDaysAgo),
+                (PumpEvent.pumpSuspend, threeDaysAgo),
+                (PumpEvent.prime, threeDaysAgo),
+                (PumpEvent.bolus, fortyDaysAgo)
+            ] {
+                let event = PumpEventStored(context: testContext)
+                event.id = UUID().uuidString
+                event.type = type.rawValue
+                event.timestamp = date
+                event.isMutable = false
+                event.isUploadedToNS = false
+                event.isUploadedToHealth = false
+                event.isUploadedToTidepool = false
+            }
+            try testContext.save()
+        }
+
+        for predicate in [NSPredicate.pumpEventsNotYetUploadedToHealth, NSPredicate.pumpEventsNotYetUploadedToTidepool] {
+            let rows = try await testContext.perform {
+                let request: NSFetchRequest<PumpEventStored> = PumpEventStored.fetchRequest()
+                request.predicate = predicate
+                return try testContext.fetch(request).map { ($0.type, $0.timestamp) }
+            }
+            #expect(rows.count == 1)
+            #expect(rows.first?.0 == PumpEvent.bolus.rawValue)
+            #expect(rows.first?.1 == threeDaysAgo)
+        }
+    }
 }

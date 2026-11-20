@@ -131,7 +131,7 @@ extension NSPredicate {
     // Mutable rows upload immediately; value changes reset isUploadedToNS and
     // the re-POST replaces the NS document (upsert on created_at + eventType).
     static var pumpEventsNotYetUploadedToNightscout: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.nightscoutUploadWindowStart
         return NSPredicate(
             format: "timestamp >= %@ AND isUploadedToNS == %@ AND \(notScheduledBasal)",
             date as NSDate,
@@ -139,21 +139,40 @@ extension NSPredicate {
         )
     }
 
+    /// Apple Health and Tidepool only take boluses and temp basals from pump history. Other rows
+    /// would never be marked uploaded, and with a per-pass fetch limit they could fill the batch
+    /// and stall the upload, so they are left out here.
+    private static let insulinDeliveryTypes = [PumpEventStored.EventType.bolus.rawValue, PumpEventStored.EventType.tempBasal.rawValue]
+
     static var pumpEventsNotYetUploadedToHealth: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.appleHealthUploadWindowStart
         return NSPredicate(
-            format: "timestamp >= %@ AND isUploadedToHealth == %@ AND \(notScheduledBasal) AND \(notMutable)",
+            format: "timestamp >= %@ AND isUploadedToHealth == %@ AND type IN %@ AND \(notScheduledBasal) AND \(notMutable)",
             date as NSDate,
-            false as NSNumber
+            false as NSNumber,
+            insulinDeliveryTypes
         )
     }
 
     static var pumpEventsNotYetUploadedToTidepool: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.tidepoolUploadWindowStart
         return NSPredicate(
-            format: "timestamp >= %@ AND isUploadedToTidepool == %@ AND \(notScheduledBasal) AND \(notMutable)",
+            format: "timestamp >= %@ AND isUploadedToTidepool == %@ AND type IN %@ AND \(notScheduledBasal) AND \(notMutable)",
             date as NSDate,
-            false as NSNumber
+            false as NSNumber,
+            insulinDeliveryTypes
+        )
+    }
+
+    /// Temp basal rows needed to adjust the overlaps of a batch of events being uploaded: from a day
+    /// before the oldest event (so its predecessor is included) up to the newest one.
+    static func tempBasalsAround(_ timestamps: [Date]) -> NSPredicate {
+        let newest = timestamps.max() ?? Date()
+        let oldest = (timestamps.min() ?? newest).addingTimeInterval(-24 * 60 * 60)
+        return NSPredicate(
+            format: "timestamp >= %@ AND timestamp <= %@ AND tempBasal != nil",
+            oldest as NSDate,
+            newest as NSDate
         )
     }
 }

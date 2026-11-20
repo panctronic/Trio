@@ -1152,6 +1152,87 @@
     "This SMB was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
       "comment" : "Warning when deleting an SMB that is still active"
     },
+    "Adds %@" : {
+      "comment" : "Accessibility hint for the watch bolus plus button; %@ is an amount like \"0.05 units\""
+    },
+    "Adds 5 grams" : {
+      "comment" : "Accessibility hint for the watch carbs plus button"
+    },
+    "Bolus amount" : {
+
+    },
+    "Bolus confirmation" : {
+      "comment" : "Accessibility label for the watch bolus confirmation bar"
+    },
+    "Decrease bolus" : {
+
+    },
+    "Decrease carbs" : {
+
+    },
+    "Enacting Bolus..." : {
+      "comment" : "Watch progress while a bolus is sent"
+    },
+    "HIGH" : {
+      "comment" : "Shown instead of the glucose value at the top of the sensor range"
+    },
+    "Increase bolus" : {
+
+    },
+    "Increase carbs" : {
+
+    },
+    "Last loop %@ ago" : {
+      "comment" : "Hint under IOB on Home when the last loop is overdue; %@ is a short duration like \"15 min\""
+    },
+    "last loop %@ ago" : {
+      "comment" : "Accessibility: IOB hint when the last loop is overdue; %@ is a duration like \"15 minutes\""
+    },
+    "no data" : {
+      "comment" : "Accessibility: watch value that is not available or outdated"
+    },
+    "No recent loop" : {
+      "comment" : "Hint under IOB on Home when Trio has not looped for over a day"
+    },
+    "no recent loop" : {
+      "comment" : "Accessibility: IOB hint when Trio has not looped for over a day"
+    },
+    "outdated" : {
+      "comment" : "Accessibility: a glucose reading that is no longer current"
+    },
+    "Stabilizing" : {
+      "comment" : "CGM sensor status tag on the glucose bobble"
+    },
+    "Subtracts %@" : {
+      "comment" : "Accessibility hint for the watch bolus minus button; %@ is an amount like \"0.05 units\""
+    },
+    "Subtracts 5 grams" : {
+      "comment" : "Accessibility hint for the watch carbs minus button"
+    },
+    "Swipe up repeatedly to fill the bar and bolus anyway. Swipe down to step back." : {
+      "comment" : "Accessibility hint for the watch bar that confirms a bolus despite a safety warning"
+    },
+    "Swipe up repeatedly to fill the bar and enact the bolus. Swipe down to step back." : {
+      "comment" : "Accessibility hint for the watch bolus confirmation bar"
+    },
+    "Switches to %@ %@" : {
+      "comment" : "Next scheduled therapy profile switch on another day; first %@ is a profile name, second a weekday and time like \"Sat 07:00\""
+    },
+    "Switches to %@ at %@" : {
+      "comment" : "Next scheduled therapy profile switch today; first %@ is a profile name, second a clock time"
+    },
+    "To bolus anyway, swipe up on the bar until it is full." : {
+      "comment" : "Watch bolus override confirmation with VoiceOver"
+    },
+    "To confirm, swipe up on the bar until it is full." : {
+      "comment" : "Watch bolus confirmation with VoiceOver"
+    },
+    "updated at %@" : {
+      "comment" : "Accessibility: Live Activity update time; %@ is a clock time"
+    },
+    "Warming up" : {
+      "comment" : "CGM sensor status tag on the glucose bobble"
+    },
     " " : {
       "localizations" : {
         "bg" : {

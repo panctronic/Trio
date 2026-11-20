@@ -41,7 +41,8 @@
 name: zzz [DO NOT RUN] Bump APP_DEV_VERSION on dev push
 
 # Called from upstream_automation.yml; see that file for why there is a single dispatcher.
-# Runs on every push to `dev` (trigger lives in the caller).
+# Runs on every push to `dev` once its unit tests have passed (trigger and
+# gating live in the caller).
 on:
   workflow_call:
     secrets:
@@ -54,10 +55,14 @@ jobs:
     runs-on: ubuntu-26.04
 
     steps:
+      # Check out the current tip of the branch rather than the pushed commit:
+      # this job waits for the unit tests, so more commits may have landed on
+      # dev in the meantime and pushing from the older commit would be rejected.
       - name: Checkout repo
         uses: actions/checkout@v5
         with:
-         token: ${{ secrets.TRIO_TOKEN_AUTOBUMP }}
+          token: ${{ secrets.TRIO_TOKEN_AUTOBUMP }}
+          ref: ${{ github.ref_name }}
 
       - name: Set up Git
         run: |

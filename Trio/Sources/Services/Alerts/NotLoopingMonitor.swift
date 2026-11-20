@@ -26,8 +26,24 @@ final class NotLoopingMonitor: Injectable {
     @Injected() private var trioAlertManager: TrioAlertManager!
     @Injected() private var settingsManager: SettingsManager!
     @Injected() private var broadcaster: Broadcaster!
+    @Injected() private var deviceDataManager: DeviceDataManager!
 
     private var lastLoopDate = Date()
+
+    /// Pump states as last reported by the pump manager. Kept here rather than
+    /// read back from `APSManager`, which applies them asynchronously on main
+    /// and could still report the old state when a transition arrives.
+    /// `nil` until the first report; then `APSManager`'s copy is used.
+    private var pumpSuspended: Bool?
+    private var manualTempBasalActive: Bool?
+    private var automationEnabled: Bool?
+
+    /// Set when looping becomes expected again (pump resumed, manual temp
+    /// basal ended, closed loop re-enabled). Loops keep "succeeding" while the
+    /// pump is suspended without arming anything, so without this the ladder
+    /// would stay disarmed after resume until the next successful loop — and
+    /// if looping then failed, no alarm would ever fire.
+    private var resumedAt: Date?
 
     /// Minutes of staleness for each Time-Sensitive warning step.
     private static let warningMinutes: [Int] = [20, 40, 60, 80, 100]
@@ -58,16 +74,62 @@ final class NotLoopingMonitor: Injectable {
 
     init(resolver: Resolver) {
         injectServices(resolver)
+        automationEnabled = settingsManager.settings.dosingMode.automation != AutomationLevel.off
         subscribe(to: apsManager.lastLoopDateSubject.eraseToAnyPublisher())
+        subscribe(
+            suspension: deviceDataManager.suspended.receive(on: DispatchQueue.main).eraseToAnyPublisher(),
+            manualTempBasal: deviceDataManager.manualTempBasal.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+        )
         broadcaster.register(SnoozeObserver.self, observer: self)
+        broadcaster.register(SettingsObserver.self, observer: self)
     }
 
     /// Publisher-only seam for tests: assigns the alert manager directly and
     /// subscribes to a supplied loop-date publisher, avoiding the need to stub
     /// the full `APSManager` protocol.
-    init(loopDates: AnyPublisher<Date, Never>, trioAlertManager: TrioAlertManager) {
+    init(
+        loopDates: AnyPublisher<Date, Never>,
+        trioAlertManager: TrioAlertManager,
+        suspension: AnyPublisher<Bool, Never> = Empty().eraseToAnyPublisher(),
+        manualTempBasal: AnyPublisher<Bool, Never> = Empty().eraseToAnyPublisher()
+    ) {
         self.trioAlertManager = trioAlertManager
         subscribe(to: loopDates)
+        subscribe(suspension: suspension, manualTempBasal: manualTempBasal)
+    }
+
+    private func subscribe(suspension: AnyPublisher<Bool, Never>, manualTempBasal: AnyPublisher<Bool, Never>) {
+        // The pump manager re-sends both flags on every status update, so
+        // only real transitions are acted on.
+        suspension
+            .removeDuplicates()
+            .sink { [weak self] suspended in
+                guard let self else { return }
+                let wasSuspended = self.pumpSuspended
+                self.pumpSuspended = suspended
+                if wasSuspended == true, !suspended { self.loopingBecameExpected() }
+            }
+            .store(in: &subscriptions)
+
+        manualTempBasal
+            .removeDuplicates()
+            .sink { [weak self] active in
+                guard let self else { return }
+                let wasActive = self.manualTempBasalActive
+                self.manualTempBasalActive = active
+                if wasActive == true, !active { self.loopingBecameExpected() }
+            }
+            .store(in: &subscriptions)
+    }
+
+    /// Re-arms the ladder when Trio is expected to loop again. The ladder is
+    /// anchored to the later of the last successful loop and the moment
+    /// looping became expected: a loop history that went stale during a
+    /// deliberate suspension must not make every step look already overdue
+    /// (overdue steps are skipped, so nothing would fire at all).
+    private func loopingBecameExpected() {
+        resumedAt = Date()
+        rescheduleAlarm()
     }
 
     private func subscribe(to loopDates: AnyPublisher<Date, Never>) {
@@ -92,9 +154,9 @@ final class NotLoopingMonitor: Injectable {
         // Looping" alarm would just be noise. nil injection (publisher-only
         // test seam) passes so the existing tests still exercise the
         // retract/reschedule plumbing.
-        guard settingsManager?.settings.dosingMode.automation != AutomationLevel.off,
-              apsManager?.isManualTempBasal != true,
-              apsManager?.isSuspended != true
+        guard automationEnabled ?? (settingsManager?.settings.dosingMode.automation != AutomationLevel.off),
+              (manualTempBasalActive ?? apsManager?.isManualTempBasal) != true,
+              (pumpSuspended ?? apsManager?.isSuspended) != true
         else { return }
 
         let now = Date()
@@ -111,7 +173,8 @@ final class NotLoopingMonitor: Injectable {
     /// mid-window re-arm keeps the original schedule. A step whose moment has
     /// already passed is skipped rather than fired late.
     private func issue(identifier: Alert.Identifier, after minutes: Int, level: Alert.InterruptionLevel, now: Date) {
-        let fireDate = lastLoopDate.addingTimeInterval(TimeInterval(minutes * 60))
+        let anchor = max(lastLoopDate, resumedAt ?? .distantPast)
+        let fireDate = anchor.addingTimeInterval(TimeInterval(minutes * 60))
         let remaining = fireDate.timeIntervalSince(now)
         guard remaining > 0 else { return }
         let content = Alert.Content(
@@ -141,5 +204,16 @@ extension NotLoopingMonitor: SnoozeObserver {
     /// drops the steps that fall inside the window and keeps the rest.
     @MainActor func snoozeDidChange(_: Date) {
         rescheduleAlarm()
+    }
+}
+
+extension NotLoopingMonitor: SettingsObserver {
+    /// Switching back to closed loop re-arms the ladder the same way a pump
+    /// resume does, instead of waiting for the next successful loop.
+    func settingsDidChange(_ settings: TrioSettings) {
+        let enabled = settings.dosingMode.automation != AutomationLevel.off
+        let wasEnabled = automationEnabled
+        automationEnabled = enabled
+        if wasEnabled == false, enabled { loopingBecameExpected() }
     }
 }

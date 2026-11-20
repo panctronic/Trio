@@ -114,6 +114,9 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     private var lastEnactedDetermination: Determination?
     private var lastSuggestedDetermination: Determination?
 
+    /// Deletions Nightscout did not accept, retried on the pump history upload pass.
+    private var pendingDeletions: PendingDeletionQueue!
+
     /// Bag for Combine subscriptions owned by this manager.
     var subscriptions = Set<AnyCancellable>()
 
@@ -153,7 +156,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \OverrideStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -172,7 +175,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \OverrideRunStored.startDate, ascending: true)]
         request.predicate = NSPredicate(
             format: "startDate >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -191,7 +194,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \TempTargetStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -210,7 +213,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \TempTargetRunStored.startDate, ascending: true)]
         request.predicate = NSPredicate(
             format: "startDate >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -245,7 +248,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \CarbEntryStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         request.fetchBatchSize = 50
@@ -277,6 +280,11 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
 
     init(resolver: Resolver) {
         injectServices(resolver)
+        pendingDeletions = PendingDeletionQueue(
+            storage: storage,
+            file: OpenAPS.Nightscout.pendingDeletionsNightscout,
+            category: .nightscout
+        )
 
         NightscoutObjectIdStore.shared.snapshot()
 
@@ -456,7 +464,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             debug(.nightscout, "Carb entry deleted")
             return true
         } catch {
-            warning(.nightscout, "Carb entry deletion failed", error: error)
+            warning(.nightscout, "Carb entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .carbs, id: id))
             return false
         }
     }
@@ -468,7 +477,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             try await nightscout.deleteInsulin(withId: id)
             debug(.nightscout, "Insulin entry deleted")
         } catch {
-            warning(.nightscout, "Insulin entry deletion failed", error: error)
+            warning(.nightscout, "Insulin entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .insulin, id: id))
         }
     }
 
@@ -479,7 +489,33 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             try await nightscout.deleteGlucose(withId: id, withDate: date)
             debug(.nightscout, "Glucose entry deleted")
         } catch {
-            warning(.nightscout, "Glucose entry deletion failed", error: error)
+            warning(.nightscout, "Glucose entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .glucose, id: id, date: date))
+        }
+    }
+
+    /// Retries deletions that failed earlier, so a record deleted in Trio doesn't stay visible to followers.
+    private func retryPendingDeletions() async {
+        guard let nightscout = nightscoutAPI, isUploadEnabled, isNetworkReachable else { return }
+
+        await pendingDeletions.retryDue { deletion in
+            do {
+                switch deletion.kind {
+                case .carbs:
+                    try await nightscout.deleteCarbs(withId: deletion.id)
+                case .insulin:
+                    try await nightscout.deleteInsulin(withId: deletion.id)
+                case .glucose:
+                    guard let date = deletion.date else { return true }
+                    try await nightscout.deleteGlucose(withId: deletion.id, withDate: date)
+                case .healthSample:
+                    return true
+                }
+                return true
+            } catch {
+                warning(.nightscout, "Retried \(deletion.kind.rawValue) deletion \(deletion.id) failed", error: error)
+                return false
+            }
         }
     }
 
@@ -899,13 +935,17 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     private func performUploadGlucose() async {
         do {
             try await uploadGlucose(glucoseStorage.getGlucoseNotYetUploadedToNightscout())
-            try await uploadNonCoreDataTreatments(glucoseStorage.getCGMStateNotYetUploadedToNightscout())
+            let cgmState = try await glucoseStorage.getCGMStateNotYetUploadedToNightscout()
+            if await uploadNonCoreDataTreatments(cgmState) {
+                await glucoseStorage.markCGMStateUploadedToNightscout(cgmState)
+            }
         } catch {
             warning(.nightscout, "Failed to load pending glucose for upload", error: error)
         }
     }
 
     private func performUploadPumpHistory() async {
+        await retryPendingDeletions()
         do {
             try await uploadPumpHistory(pumpHistoryStorage.getPumpHistoryNotYetUploadedToNightscout())
         } catch {
@@ -958,13 +998,12 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
 
         do {
-            // Upload in Batches of 100
+            // Upload in batches of 100, marking each batch as soon as it is accepted so a later
+            // failure doesn't send the earlier batches again
             for chunk in glucose.chunks(ofCount: 100) {
                 try await nightscout.uploadGlucose(Array(chunk))
+                await updateGlucoseAsUploaded(Array(chunk))
             }
-
-            // If successful, update the isUploadedToNS property of the GlucoseStored objects
-            await updateGlucoseAsUploaded(glucose)
 
             info(.nightscout, "Uploaded \(glucose.count) glucose values")
         } catch {
@@ -1026,10 +1065,11 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
                     NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: bolusIds),
                     fromSite: site.url
                 )
+                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                // without its _id lookup having run, even if a later chunk fails.
+                await resolveMissingObjectIds(localIds: Array(bolusIds), site: site)
+                await updatePumpEventStoredsAsUploaded(Array(chunk))
             }
-            await resolveMissingObjectIds(localIds: treatments.filter { $0.insulin != nil }.compactMap(\.id), site: site)
-
-            await updatePumpEventStoredsAsUploaded(treatments)
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
         } catch {
@@ -1101,15 +1141,16 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             for chunk in treatments.chunks(ofCount: 100) {
                 let response = try await site.api.uploadTreatments(Array(chunk))
+                let localIds = Set(chunk.compactMap(\.id))
                 NightscoutObjectIdStore.shared.record(
-                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: Set(chunk.compactMap(\.id))),
+                    NightscoutObjectIdCache.mappings(fromUploadResponse: response, localIds: localIds),
                     fromSite: site.url
                 )
+                // Resolve the chunk's _ids before marking it, so a row is never marked uploaded
+                // without its _id lookup having run, even if a later chunk fails.
+                await resolveMissingObjectIds(localIds: Array(localIds), site: site)
+                await updateCarbsAsUploaded(Array(chunk))
             }
-            await resolveMissingObjectIds(localIds: treatments.compactMap(\.id), site: site)
-
-            // If successful, update the isUploadedToNS property of the CarbEntryStored objects
-            await updateCarbsAsUploaded(treatments)
 
             info(.nightscout, "Uploaded \(treatments.count) carb entries")
         } catch {
@@ -1121,13 +1162,29 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "updateCarbsAsUploaded"
         await context.perform {
-            let ids = treatments.map(\.id) as NSArray
+            let ids = treatments.compactMap { $0.id.flatMap(UUID.init(uuidString:)) }
+            // Carb equivalents are sent with their meal's fpuID as `id`, so their own row ids never
+            // match; they are identified by fpuID and date instead.
+            let sentEquivalents = Set(treatments.compactMap { treatment -> String? in
+                guard let id = treatment.id, let date = treatment.createdAt else { return nil }
+                return "\(id.lowercased())|\(date.timeIntervalSince1970)"
+            })
             let fetchRequest: NSFetchRequest<CarbEntryStored> = CarbEntryStored.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "id IN %@", ids)
+            fetchRequest.predicate = NSPredicate(
+                format: "id IN %@ OR (isFPU == YES AND fpuID IN %@)",
+                ids as NSArray,
+                ids as NSArray
+            )
 
             do {
                 let results = try context.fetch(fetchRequest)
                 for result in results {
+                    if result.isFPU, let fpuID = result.fpuID, let date = result.date,
+                       !(result.id.map(ids.contains) ?? false)
+                    {
+                        let key = "\(fpuID.uuidString.lowercased())|\(date.timeIntervalSince1970)"
+                        guard sentEquivalents.contains(key) else { continue }
+                    }
                     result.isUploadedToNS = true
                 }
 

@@ -4,33 +4,92 @@ import UIKit
 ///
 /// - Parameter taskID: The background task identifier to be ended.
 func endBackgroundTaskSafely(_ taskID: inout UIBackgroundTaskIdentifier, taskName: String = "Unnamed Task") {
-    if taskID != .invalid {
-        UIApplication.shared.endBackgroundTask(taskID)
-        debug(.lifecycle, "Background task '\(taskName)' ended")
-        taskID = .invalid
-    } else {
+    guard taskID != .invalid else {
         debug(.lifecycle, "Background task '\(taskName)' already ended")
+        return
     }
+    defer { taskID = .invalid }
+
+    // The expiration handler already ended it; ending it twice only produces a system warning.
+    guard !BackgroundTaskRegistry.shared.consumeExpired(taskID) else {
+        debug(.lifecycle, "Background task '\(taskName)' already ended on expiry")
+        return
+    }
+    UIApplication.shared.endBackgroundTask(taskID)
+    debug(.lifecycle, "Background task '\(taskName)' ended")
 }
 
 /// Starts a background task and handles its expiration safely.
 ///
+/// iOS terminates the app if a background task is still running when its time runs out, so the
+/// expiration handler must end it. The handler is created before `beginBackgroundTask` returns the
+/// identifier, so the identifier is passed in through a shared box rather than captured by value
+/// (a value capture would always hold `.invalid` and the task would never be ended).
+///
 /// - Parameter name: The background task name.
 func startBackgroundTask(withName name: String) -> UIBackgroundTaskIdentifier {
-    // Use a local copy of the taskID for the expiration handler
-    let taskID = UIApplication.shared.beginBackgroundTask(withName: name) { [taskID = UIBackgroundTaskIdentifier.invalid] in
-        // Create a new Task that takes the value of the taskID as a parameter
-        // and does not use the captured variable
-        Task { @MainActor in
-            // Since we can no longer change the original taskID,
-            // we simply end the Task with the given ID
-            if taskID != .invalid {
-                UIApplication.shared.endBackgroundTask(taskID)
-                warning(.lifecycle, "Background task '\(name)' expired")
-            }
+    let box = BackgroundTaskIDBox()
+    let taskID = UIApplication.shared.beginBackgroundTask(withName: name) {
+        // Runs on the main thread; the task has to be ended before this returns.
+        box.expire { expiredID in
+            BackgroundTaskRegistry.shared.markExpired(expiredID)
+            UIApplication.shared.endBackgroundTask(expiredID)
+            warning(.lifecycle, "Background task '\(name)' expired")
         }
+    }
+    box.set(taskID) { expiredID in
+        // Expired before the identifier was even known: end it now.
+        BackgroundTaskRegistry.shared.markExpired(expiredID)
+        UIApplication.shared.endBackgroundTask(expiredID)
+        warning(.lifecycle, "Background task '\(name)' expired")
     }
 
     debug(.lifecycle, "Background task '\(name)' started")
     return taskID
+}
+
+/// Hands the identifier returned by `beginBackgroundTask` to its own expiration handler.
+final class BackgroundTaskIDBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var taskID: UIBackgroundTaskIdentifier = .invalid
+    private var expired = false
+
+    /// Records the identifier. If the expiration handler already ran, `onAlreadyExpired` ends it.
+    func set(_ id: UIBackgroundTaskIdentifier, onAlreadyExpired: (UIBackgroundTaskIdentifier) -> Void) {
+        lock.lock()
+        taskID = id
+        let alreadyExpired = expired
+        lock.unlock()
+        if alreadyExpired, id != .invalid { onAlreadyExpired(id) }
+    }
+
+    /// Called from the expiration handler; runs `end` with the identifier once it is known.
+    func expire(_ end: (UIBackgroundTaskIdentifier) -> Void) {
+        lock.lock()
+        expired = true
+        let id = taskID
+        lock.unlock()
+        if id != .invalid { end(id) }
+    }
+}
+
+/// Identifiers ended by their expiration handler, so the owner's later
+/// `endBackgroundTaskSafely` does not end them a second time.
+final class BackgroundTaskRegistry: @unchecked Sendable {
+    static let shared = BackgroundTaskRegistry()
+    private let lock = NSLock()
+    private var expiredIDs = Set<UIBackgroundTaskIdentifier>()
+
+    func markExpired(_ id: UIBackgroundTaskIdentifier) {
+        lock.lock()
+        expiredIDs.insert(id)
+        lock.unlock()
+    }
+
+    /// Returns whether `id` was ended on expiry, forgetting it either way.
+    func consumeExpired(_ id: UIBackgroundTaskIdentifier) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return expiredIDs.remove(id) != nil
+    }
 }
