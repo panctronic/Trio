@@ -4,7 +4,7 @@ import Swinject
 extension AlarmWindows {
     struct RootView: BaseView {
         let resolver: Resolver
-        @StateObject var state = StateModel()
+        @State var state = StateModel()
         @StateObject private var store = GlucoseAlertsStore.shared
 
         @State private var shouldDisplayHint: Bool = false

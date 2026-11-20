@@ -5,7 +5,7 @@ extension ConfigEditor {
     struct RootView: BaseView {
         let resolver: Resolver
         let file: String
-        @StateObject var state = StateModel()
+        @State var state = StateModel()
         @State private var showShareSheet = false
 
         @Environment(\.colorScheme) var colorScheme

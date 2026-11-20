@@ -1,5 +1,6 @@
+import Observation
 import SwiftUI
 
 extension IconConfig {
-    final class StateModel: BaseStateModel<Provider> {}
+    @Observable final class StateModel: BaseStateModel<Provider> {}
 }

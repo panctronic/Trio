@@ -1,10 +1,11 @@
+import Observation
 import SwiftUI
 import Swinject
 
 extension ConfigEditor {
-    final class StateModel: BaseStateModel<Provider> {
-        var file: String = ""
-        @Published var configText = ""
+    @Observable final class StateModel: BaseStateModel<Provider> {
+        @ObservationIgnored var file: String = ""
+        var configText = ""
 
         override func subscribe() {
             configText = provider.load(file: file)
