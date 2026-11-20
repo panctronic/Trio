@@ -86,17 +86,14 @@ final class GlucoseAlertCoordinator: Injectable {
     /// CGM blackout could fire an alarm based on a 19-min-old reading.
     private static let readingFreshnessWindow: TimeInterval = 12 * 60
 
-    /// Suppresses evaluations for a short window after launch. `firingAlertIDs`
-    /// isn't persisted across relaunches, so without this quiet window the
-    /// first reading after launch would re-fire any in-flight alarm whose
-    /// glucose is still past threshold. UN throttle dedupes the lock-screen
-    /// notification (5-min window), but the in-app banner can re-pop. Skipping
-    /// the first ~30s lets the picture settle.
+    /// Defers evaluations for a short window after launch. `firingAlertIDs`
+    /// isn't persisted across relaunches, so the first readings after launch
+    /// would otherwise re-fire in-flight alarms while the picture settles.
+    /// Evaluations arriving in the window run once it ends rather than being
+    /// dropped: a background relaunch is often caused by the very CGM reading
+    /// that should alarm. The UN throttle dedupes the repeated notification.
     private static let launchQuietWindow: TimeInterval = 30
-    private let launchedAt = Date()
-    private var isInLaunchQuietWindow: Bool {
-        Date().timeIntervalSince(launchedAt) < Self.launchQuietWindow
-    }
+    private let launchQuietGate: LaunchQuietWindowGate
 
     private var effectiveTrioAlertsEnabled: Bool {
         if configurationSnapshot.forceTrioAlertsWhenCGMProvidesOwn { return true }
@@ -107,6 +104,10 @@ final class GlucoseAlertCoordinator: Injectable {
     }
 
     init(resolver: Resolver) {
+        launchQuietGate = LaunchQuietWindowGate(
+            endsAt: Date().addingTimeInterval(Self.launchQuietWindow),
+            queue: evaluationQueue
+        )
         injectServices(resolver)
         let store = GlucoseAlertsStore.shared
         alertsSnapshot = store.alerts
@@ -122,17 +123,24 @@ final class GlucoseAlertCoordinator: Injectable {
         broadcaster.register(GlucoseSnoozeObserver.self, observer: self)
         glucoseStorage.updatePublisher
             .sink { [weak self] _ in
-                Task { [weak self] in await self?.evaluateGlucoseAlarms() }
+                self?.scheduleGlucoseAlarmEvaluation()
             }
             .store(in: &subscriptions)
     }
 
     // MARK: - Reading-based evaluation
 
+    private func scheduleGlucoseAlarmEvaluation() {
+        evaluationQueue.async { [weak self] in
+            self?.launchQuietGate.runOrDefer(key: "reading") { [weak self] in
+                Task { [weak self] in await self?.evaluateGlucoseAlarms() }
+            }
+        }
+    }
+
     /// Two-stage: async-fetch the latest value (Core Data perform), then hop
     /// onto `evaluationQueue` to mutate `firingAlertIDs` safely.
     private func evaluateGlucoseAlarms() async {
-        guard !isInLaunchQuietWindow else { return }
         guard effectiveTrioAlertsEnabled else {
             retractReadingDrivenFiringAlarms()
             return
@@ -208,7 +216,6 @@ final class GlucoseAlertCoordinator: Injectable {
     // MARK: - Forecast-based evaluation
 
     private func evaluateForecast(_ determination: Determination) {
-        guard !isInLaunchQuietWindow else { return }
         // No CGM-ownership guard here, unlike the reading path: a CGM app can
         // alarm on the current reading, but it cannot compute Trio's oref
         // forecast, so it can never cover this alarm. Same reasoning as
@@ -265,7 +272,6 @@ final class GlucoseAlertCoordinator: Injectable {
     /// user can have a low-threshold badge for awareness and a higher-
     /// threshold alarm for active interruption.
     private func evaluateCarbsRequired(_ determination: Determination) {
-        guard !isInLaunchQuietWindow else { return }
         let snapshot = alertsSnapshot
         let configuration = configurationSnapshot
         let now = Date()
@@ -437,8 +443,11 @@ final class GlucoseAlertCoordinator: Injectable {
 extension GlucoseAlertCoordinator: DeterminationObserver {
     func determinationDidUpdate(_ determination: Determination) {
         evaluationQueue.async { [weak self] in
-            self?.evaluateForecast(determination)
-            self?.evaluateCarbsRequired(determination)
+            // Only the latest determination matters if several arrive during the quiet window.
+            self?.launchQuietGate.runOrDefer(key: "determination") { [weak self] in
+                self?.evaluateForecast(determination)
+                self?.evaluateCarbsRequired(determination)
+            }
         }
     }
 }
@@ -488,6 +497,43 @@ extension GlucoseAlertCoordinator: GlucoseSnoozeObserver {
             let ids = Set(matchingAlarms.map(\.id))
             self.evaluationQueue.async { [weak self] in
                 self?.firingAlertIDs.subtract(ids)
+            }
+        }
+    }
+}
+
+/// Runs work immediately, or once a quiet window has ended if it arrives during
+/// it. Deferred work is coalesced per key: only the most recent closure for a
+/// key runs, once, on `queue` at the end of the window.
+final class LaunchQuietWindowGate {
+    private let endsAt: Date
+    private let queue: DispatchQueue
+    /// Accessed on `queue` only.
+    private var pending: [String: () -> Void] = [:]
+    private var flushScheduled = false
+
+    init(endsAt: Date, queue: DispatchQueue) {
+        self.endsAt = endsAt
+        self.queue = queue
+    }
+
+    /// Must be called on `queue`.
+    func runOrDefer(key: String, now: Date = Date(), _ work: @escaping () -> Void) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        let remaining = endsAt.timeIntervalSince(now)
+        guard remaining > 0 else {
+            work()
+            return
+        }
+        pending[key] = work
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        queue.asyncAfter(deadline: .now() + remaining) { [self] in
+            flushScheduled = false
+            let deferred = pending
+            pending = [:]
+            for (_, work) in deferred.sorted(by: { $0.key < $1.key }) {
+                work()
             }
         }
     }
