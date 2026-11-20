@@ -1089,6 +1089,96 @@
         }
       }
     },
+    "%@ g is more than the max carbs of %@ g." : {
+      "comment" : "Watch message when carbs above the max carbs setting are refused"
+    },
+    "%@ U of external insulin was logged. Do not log it again. Only updating the forecast failed: %@" : {
+      "comment" : "Message when external insulin was saved but the following determination failed; the arguments are the amount and the reason"
+    },
+    "%@ U was rounded down to the bolus increment." : {
+      "comment" : "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
+    },
+    "%@ U was rounded down to what the pump can deliver." : {
+      "comment" : "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
+    },
+    "A bolus of %@ U of insulin was enacted." : {
+      "comment" : "Shortcut result when the pump confirmed the bolus"
+    },
+    "Amount must be positive." : {
+
+    },
+    "Are you sure to bolus %@ U of insulin?" : {
+
+    },
+    "Are you sure to log %@ U of external insulin?" : {
+
+    },
+    "Bolus not enacted: the carbs entered with it were not logged." : {
+      "comment" : "Watch message when a bolus is refused because its carbs were refused or not saved"
+    },
+    "Bolus of %@ U not delivered. %@" : {
+      "comment" : "Shortcut result when the bolus was refused or failed; the second argument is the reason"
+    },
+    "Bolus status unknown. Check pump history before repeating." : {
+      "comment" : "Watch message when the outcome of a bolus is not known"
+    },
+    "Carbs logged, bolus not enacted." : {
+      "comment" : "Start of the watch message when carbs were saved but the bolus was not given"
+    },
+    "Carbs logged." : {
+      "comment" : "Start of the watch message when carbs were saved but the bolus failed"
+    },
+    "Carbs must be more than 0 g." : {
+      "comment" : "Watch message when a carbs entry of zero or less is received"
+    },
+    "Carbs were saved, but the bolus was not delivered. Do not enter the carbs again. %@" : {
+      "comment" : "Alert when a meal was saved but the bolus with it failed; the argument is the reason"
+    },
+    "Carbs were saved, but the outcome of the bolus is not known. Check pump history before repeating the bolus." : {
+      "comment" : "Alert when a meal was saved and no outcome was reported for the bolus with it"
+    },
+    "Carbs were saved, but the pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
+      "comment" : "Alert when a meal was saved and it is not known whether the bolus with it was delivered; the argument is the pump's reason"
+    },
+    "Error! Carbs could not be saved." : {
+      "comment" : "Watch message when carbs from the watch could not be saved"
+    },
+    "No bolus enacted." : {
+      "comment" : "Watch message added when a bolus was not given because its carbs could not be saved"
+    },
+    "Nothing logged, no bolus enacted: %@" : {
+      "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
+    },
+    "The carbs could not be saved, so no insulin was given or logged. Please try again." : {
+      "comment" : "Alert when saving the meal failed on the treatments screen"
+    },
+    "The outcome of the bolus is not known. Check pump history before repeating the bolus." : {
+      "comment" : "Alert when no outcome was reported for the bolus from the treatments screen"
+    },
+    "The outcome of the bolus of %@ U is not known. Check pump history before repeating." : {
+      "comment" : "Shortcut result when no outcome was reported for the bolus"
+    },
+    "The pump did not confirm the bolus of %@ U, it may have been delivered. Check pump history before repeating. %@" : {
+      "comment" : "Shortcut result when it is not known whether the bolus was delivered; the second argument is the reason"
+    },
+    "The pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
+      "comment" : "Alert when it is not known whether the bolus from the treatments screen was delivered; the argument is the pump's reason"
+    },
+    "These carbs still count towards COB. Deleting them lowers COB, so Trio will dose less insulin for them." : {
+      "comment" : "Warning when deleting carbs that are still being absorbed"
+    },
+    "This bolus was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
+      "comment" : "Warning when deleting a pump bolus that is still active"
+    },
+    "This insulin is still active. Deleting it lowers IOB, so Trio may dose more insulin. Only delete it if it was not actually taken." : {
+      "comment" : "Warning when deleting external insulin that is still active"
+    },
+    "This is more than your max bolus of %@ U. Check the amount before logging it." : {
+      "comment" : "Added to the Shortcut confirmation for external insulin above max bolus"
+    },
+    "This SMB was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
+      "comment" : "Warning when deleting an SMB that is still active"
+    },
     "Adds %@" : {
       "comment" : "Accessibility hint for the watch bolus plus button; %@ is an amount like \"0.05 units\""
     },

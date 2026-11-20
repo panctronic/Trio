@@ -25,6 +25,11 @@ extension History {
 
         var units: GlucoseUnits = .mgdL
 
+        /// The insulin's duration of action, during which a deleted dose would still count towards IOB.
+        var insulinActiveDuration: TimeInterval {
+            TimeInterval(Double(truncating: settingsManager.pumpSettings.insulinActionCurve as NSNumber) * 60 * 60)
+        }
+
         var carbEntryToEdit: CarbEntryStored?
         var showCarbEntryEditor = false
 

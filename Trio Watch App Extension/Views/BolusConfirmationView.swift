@@ -18,8 +18,8 @@ struct BolusConfirmationView: View {
     )
 
     var body: some View {
-        let bolusIncrement = Double(truncating: state.bolusIncrement as NSNumber)
-        let adjustedBolusAmount = floor(bolusAmount / bolusIncrement) * bolusIncrement
+        // What is shown is what is sent: the amount rounded down to the pump's bolus increment
+        let adjustedBolusAmount = WatchState.bolusRoundedDown(bolusAmount, toIncrement: state.bolusIncrement)
 
         VStack(spacing: 10) {
             Spacer()
@@ -92,7 +92,7 @@ struct BolusConfirmationView: View {
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     // Sends carbs and bolus, or refuses an entry older than 2 min; either way the entry is cleared
-                    state.sendConfirmedEntry(bolusAmount: bolusAmount)
+                    state.sendConfirmedEntry(bolusAmount: adjustedBolusAmount)
                     navigationPath.append(NavigationDestinations.acknowledgmentPending)
                 }
             } else if newValue > 0 {

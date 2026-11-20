@@ -12,6 +12,17 @@ import WatchKit
         try await Task.sleep(for: .milliseconds(Int(seconds * 1000)))
     }
 
+    // MARK: - Bolus Rounding Tests
+
+    @Test("Bolus is rounded down to the pump increment without binary drift") func testBolusRoundedDown() {
+        #expect(WatchState.bolusRoundedDown(2.35, toIncrement: 0.05) == 2.35)
+        #expect(WatchState.bolusRoundedDown(2.37, toIncrement: 0.05) == 2.35)
+        #expect(WatchState.bolusRoundedDown(0.3, toIncrement: 0.1) == 0.3)
+        #expect(WatchState.bolusRoundedDown(1.99, toIncrement: 0.1) == 1.9)
+        #expect(WatchState.bolusRoundedDown(0.03, toIncrement: 0.05) == 0)
+        #expect(WatchState.bolusRoundedDown(-1, toIncrement: 0.05) == 0)
+    }
+
     // MARK: - Color Conversion Tests
 
     @Test("Hex string to color conversion") func testHexStringToColor() throws {

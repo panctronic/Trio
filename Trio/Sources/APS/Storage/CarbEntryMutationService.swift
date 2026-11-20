@@ -14,6 +14,23 @@ struct MealSnapshot: Equatable, Sendable {
     let note: String?
 }
 
+extension MealSnapshot {
+    /// The snapshot of a meal that had no fpuID, with that of the unlinked carb equivalents deleted along with it,
+    /// so they are deleted from the services through the same path as a linked meal's.
+    func linkingCarbEquivalents(_ orphanedFPUID: UUID?) -> MealSnapshot {
+        guard fpuID == nil, let orphanedFPUID else { return self }
+        return MealSnapshot(
+            id: id,
+            fpuID: orphanedFPUID,
+            date: date,
+            carbs: carbs,
+            fat: fat,
+            protein: protein,
+            note: note
+        )
+    }
+}
+
 enum CarbEntryMutationError: Error, Equatable {
     case rootNotFound
     case notARoot
@@ -48,8 +65,8 @@ final class BaseCarbEntryMutationService: CarbEntryMutationService, Injectable {
     func deleteMeal(rootObjectID: NSManagedObjectID) async throws -> [String] {
         let snapshot = try await localMutations.run {
             let snapshot = try await self.snapshotRoot(rootObjectID)
-            await self.carbsStorage.deleteCarbsEntryStored(rootObjectID)
-            return snapshot
+            let orphanedFPUID = await self.carbsStorage.deleteCarbsEntryStored(rootObjectID)
+            return snapshot.linkingCarbEquivalents(orphanedFPUID)
         }
         return await deleteFromServices(snapshot)
     }
@@ -63,8 +80,8 @@ final class BaseCarbEntryMutationService: CarbEntryMutationService, Injectable {
         let snapshot = try await localMutations.run {
             let snapshot = try await self.snapshotRoot(rootObjectID)
             // One transaction, so a failed insert cannot leave the meal deleted without a replacement.
-            try await self.carbsStorage.replaceCarbs(rootObjectID, with: replacement)
-            return snapshot
+            let orphanedFPUID = try await self.carbsStorage.replaceCarbs(rootObjectID, with: replacement)
+            return snapshot.linkingCarbEquivalents(orphanedFPUID)
         }
         let failures = await deleteFromServices(snapshot)
         await syncMealsWithServices()

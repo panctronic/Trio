@@ -63,28 +63,35 @@ struct BolusIntent: AppIntent {
     @MainActor func perform() async throws -> some ProvidesDialog {
         do {
             let amount: Double = bolusQuantity
+            let request = BolusIntentRequest()
 
-            let bolusFormatted = amount.formatted()
-            if confirmBeforeApplying {
+            // Confirm the amount that will be delivered or logged, not the unrounded amount typed in
+            let deliverable = externalInsulin ? request.externalAmount(amount) : request.deliverableAmount(amount)
+            let maxBolus = request.settingsManager.pumpSettings.maxBolus
+            // External insulin above max bolus is always confirmed, even if the Shortcut skips confirmation
+            let isExternalAboveMaxBolus = externalInsulin &&
+                ExternalInsulin.needsExplicitConfirmation(deliverable, maxBolus: maxBolus)
+            if confirmBeforeApplying || isExternalAboveMaxBolus {
                 try await requestConfirmation(
                     result: .result(
                         dialog: IntentDialog(
-                            stringLiteral: String(
-                                localized:
-                                externalInsulin ? "Are you sure to log \(bolusFormatted) U of external insulin?" :
-                                    "Are you sure to bolus \(bolusFormatted) U of insulin?"
+                            stringLiteral: BolusIntentRequest.confirmationMessage(
+                                requested: amount,
+                                deliverable: deliverable,
+                                isExternal: externalInsulin,
+                                aboveMaxBolus: isExternalAboveMaxBolus ? maxBolus : nil
                             )
                         )
                     )
                 )
             }
             if externalInsulin {
-                let finalExternalBolusDisplay = try await BolusIntentRequest().bolusExternal(amount)
+                let finalExternalBolusDisplay = try await request.bolusExternal(amount)
                 return .result(
                     dialog: IntentDialog(stringLiteral: finalExternalBolusDisplay)
                 )
             } else {
-                let finalBolusDisplay = try await BolusIntentRequest().bolus(amount)
+                let finalBolusDisplay = try await request.bolus(amount)
                 return .result(
                     dialog: IntentDialog(stringLiteral: finalBolusDisplay)
                 )

@@ -48,6 +48,9 @@ extension Treatments {
         var carbRatio: Decimal = 0
 
         var addButtonPressed: Bool = false
+        /// Set while the pump bolus is enacted. Determinations and failure broadcasts arriving meanwhile must not close
+        /// the screen: the submission itself reports the outcome.
+        var isEnactingBolus: Bool = false
 
         var target: Decimal = 0
         var cob: Int16 = 0
@@ -497,52 +500,110 @@ extension Treatments {
         // MARK: - Button tasks
 
         func invokeTreatmentsTask() {
+            // Set synchronously: set inside the task, a quick second tap could start a second submission
+            guard !addButtonPressed else {
+                debug(.treatments, "Treatment already being submitted, tap ignored")
+                return
+            }
+            addButtonPressed = true
+
             Task {
-                await MainActor.run {
-                    self.addButtonPressed = true
-                }
-                let isInsulinGiven = amount > 0
-                let isCarbsPresent = carbs > 0
-                let isFatPresent = fat > 0
-                let isProteinPresent = protein > 0
+                await submitTreatments()
+            }
+        }
 
-                if isCarbsPresent || isFatPresent || isProteinPresent {
-                    await saveMeal()
-                }
+        private func submitTreatments() async {
+            let isInsulinGiven = amount > 0
+            let isMealPresent = carbs > 0 || fat > 0 || protein > 0
 
-                if isInsulinGiven {
-                    await handleInsulin(isExternal: externalInsulin)
-                } else {
-                    hideModal()
+            // Authenticate before anything is saved. Saving the meal first left it saved when Face ID was
+            // cancelled, and submitting again then logged the carbs twice.
+            if isInsulinGiven {
+                guard await authenticateForInsulin() else { return }
+            }
+
+            var isMealSaved = false
+            if isMealPresent {
+                isMealSaved = await saveMeal()
+                // The bolus was worked out for this meal: no insulin for carbs that were not saved
+                guard isMealSaved else {
+                    await showSubmissionFailure(String(
+                        localized: "The carbs could not be saved, so no insulin was given or logged. Please try again.",
+                        comment: "Alert when saving the meal failed on the treatments screen"
+                    ))
                     return
                 }
+            }
 
-                // If glucose data is stale end the custom loading animation by hiding the modal
-                // Get date on Main thread
-                let date = await MainActor.run {
-                    glucoseFromPersistence.first?.date
-                }
+            guard isInsulinGiven else {
+                hideModal()
+                return
+            }
 
-                guard glucoseStorage.isGlucoseDataFresh(date) else {
-                    await MainActor.run {
-                        isAwaitingDeterminationResult = false
-                        showDeterminationFailureAlert = true
-                        determinationFailureMessage = "Glucose data is stale"
-                    }
-                    return hideModal()
+            let isInsulinHandled = externalInsulin
+                ? await addExternalInsulin()
+                : await addPumpInsulin(afterSavingMeal: isMealSaved)
+            // A failure has already been reported to the user
+            guard isInsulinHandled else { return }
+
+            // If glucose data is stale end the custom loading animation by hiding the modal
+            // Get date on Main thread
+            let date = await MainActor.run {
+                glucoseFromPersistence.first?.date
+            }
+
+            guard glucoseStorage.isGlucoseDataFresh(date) else {
+                await MainActor.run {
+                    isAwaitingDeterminationResult = false
+                    showDeterminationFailureAlert = true
+                    determinationFailureMessage = "Glucose data is stale"
                 }
+                return hideModal()
+            }
+
+            // The determination that would close the screen may have arrived while the bolus was being enacted
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = false
+            }
+            hideModal()
+        }
+
+        /// Shows why the submission did not complete. The alert's OK closes the screen; until then it stays open,
+        /// and the add button stays disabled so the same entry cannot be submitted twice.
+        private func showSubmissionFailure(_ message: String) async {
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = false
+                self.determinationFailureMessage = message
+                self.showDeterminationFailureAlert = true
+                self.isEnactingBolus = false
+            }
+        }
+
+        /// Asks for Face ID / Touch ID / passcode before insulin is given or logged.
+        /// - Returns: `true` if the user authenticated; otherwise the failure has been shown and the screen can be submitted again.
+        private func authenticateForInsulin() async -> Bool {
+            do {
+                if try await unlockmanager.unlock() {
+                    return true
+                }
+                warning(.bolus, "Authentication for insulin declined")
+                await MainActor.run {
+                    self.addButtonPressed = false
+                }
+                return false
+            } catch {
+                warning(.bolus, "Authentication for insulin failed", error: error)
+                await MainActor.run {
+                    self.isAwaitingDeterminationResult = false
+                    self.showDeterminationFailureAlert = true
+                    self.determinationFailureMessage = parseAuthenticationError(from: error)
+                    self.addButtonPressed = false
+                }
+                return false
             }
         }
 
         // MARK: - Insulin
-
-        private func handleInsulin(isExternal: Bool) async {
-            if !isExternal {
-                await addPumpInsulin()
-            } else {
-                await addExternalInsulin()
-            }
-        }
 
         /// Returns a user-facing localized error message for a given authentication error.
         ///
@@ -629,80 +690,137 @@ extension Treatments {
             }
         }
 
-        func addPumpInsulin() async {
+        /// Enacts the pump bolus. The user must have authenticated already.
+        /// - Parameter isMealSaved: Whether a meal was saved with this bolus; if the bolus then fails, the user is told
+        ///   the carbs were saved without it, and a determination updates COB.
+        /// - Returns: `true` if the pump confirmed the bolus.
+        func addPumpInsulin(afterSavingMeal isMealSaved: Bool = false) async -> Bool {
             guard amount > 0 else {
                 showModal(for: nil)
-                return
+                return false
             }
 
             let maxAmount = Double(min(amount, maxBolus))
 
-            do {
-                let authenticated = try await unlockmanager.unlock()
-                if authenticated {
-                    // show loading animation
-                    await MainActor.run {
-                        self.isAwaitingDeterminationResult = true
-                    }
-                    info(.bolus, "Bolus of \(maxAmount) U requested")
-                    await apsManager.enactBolus(amount: maxAmount, isSMB: false, callback: nil)
-                }
-            } catch {
-                warning(.bolus, "Authentication for bolus failed", error: error)
+            // show loading animation
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = true
+                self.isEnactingBolus = true
+            }
+            info(.bolus, "Bolus of \(maxAmount) U requested")
+            var bolusResult: BolusEnactmentResult?
+            await apsManager.enactBolus(amount: maxAmount, isSMB: false) { (result: BolusEnactmentResult) in
+                bolusResult = result
+            }
 
+            if let bolusResult, bolusResult.isSuccess {
                 await MainActor.run {
-                    self.isAwaitingDeterminationResult = false
-                    self.showDeterminationFailureAlert = true
-                    self.determinationFailureMessage = parseAuthenticationError(from: error)
+                    self.isEnactingBolus = false
                 }
+                return true
+            }
+
+            // Every failure is reported here, including those APSManager does not broadcast (e.g. a bolus that
+            // rounds to 0 U), so the spinner and the disabled button never stay stuck
+            warning(.bolus, "Bolus not enacted: \(bolusResult?.message ?? "no result")")
+            await showSubmissionFailure(
+                isMealSaved ? Self.mealSavedBolusFailedMessage(for: bolusResult) : Self.bolusFailedMessage(for: bolusResult)
+            )
+            if isMealSaved {
+                // A successful bolus runs a determination; without one, COB would wait for the next loop
+                do {
+                    try await apsManager.determineBasalSync()
+                } catch {
+                    warning(.treatments, "Determination after meal without bolus failed", error: error)
+                }
+            }
+            return false
+        }
+
+        /// Tells the user a bolus entered without a meal was not (or may not have been) delivered.
+        static func bolusFailedMessage(for result: BolusEnactmentResult?) -> String {
+            switch result {
+            case let .uncertainDelivery(message, _):
+                return String(
+                    localized: "The pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. \(message)",
+                    comment: "Alert when it is not known whether the bolus from the treatments screen was delivered; the argument is the pump's reason"
+                )
+            case let .failed(message, _):
+                return message
+            case .enacted,
+                 .none:
+                return String(
+                    localized: "The outcome of the bolus is not known. Check pump history before repeating the bolus.",
+                    comment: "Alert when no outcome was reported for the bolus from the treatments screen"
+                )
+            }
+        }
+
+        /// Tells the user the meal was saved although the bolus entered with it was not (or may not have been) delivered.
+        static func mealSavedBolusFailedMessage(for result: BolusEnactmentResult?) -> String {
+            switch result {
+            case let .uncertainDelivery(message, _):
+                return String(
+                    localized: "Carbs were saved, but the pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. \(message)",
+                    comment: "Alert when a meal was saved and it is not known whether the bolus with it was delivered; the argument is the pump's reason"
+                )
+            case let .failed(message, _):
+                return String(
+                    localized: "Carbs were saved, but the bolus was not delivered. Do not enter the carbs again. \(message)",
+                    comment: "Alert when a meal was saved but the bolus with it failed; the argument is the reason"
+                )
+            case .enacted,
+                 .none:
+                return String(
+                    localized: "Carbs were saved, but the outcome of the bolus is not known. Check pump history before repeating the bolus.",
+                    comment: "Alert when a meal was saved and no outcome was reported for the bolus with it"
+                )
             }
         }
 
         // MARK: - EXTERNAL INSULIN
 
-        func addExternalInsulin() async {
+        /// Logs external insulin. The user must have authenticated already.
+        /// - Returns: `true` if it was logged and a determination ran.
+        func addExternalInsulin() async -> Bool {
             guard amount > 0 else {
                 showModal(for: nil)
-                return
+                return false
             }
 
             await MainActor.run {
-                self.amount = min(self.amount, self.maxBolus * 3)
+                // Rounded to the bolus increment like a Shortcut, but not capped at the pump's largest bolus volume
+                self.amount = ExternalInsulin.rounded(
+                    min(self.amount, self.maxBolus * 3),
+                    toIncrement: self.settings.preferences.bolusIncrement
+                )
+                // show loading animation
+                self.isAwaitingDeterminationResult = true
             }
 
+            // store external dose to pump history
+            await pumpHistoryStorage.storeExternalInsulinEvent(amount: amount, timestamp: date)
+            info(.bolus, "External insulin of \(amount) U logged")
             do {
-                let authenticated = try await unlockmanager.unlock()
-                if authenticated {
-                    // show loading animation
-                    await MainActor.run {
-                        self.isAwaitingDeterminationResult = true
-                    }
-                    // store external dose to pump history
-                    await pumpHistoryStorage.storeExternalInsulinEvent(amount: amount, timestamp: date)
-                    info(.bolus, "External insulin of \(amount) U logged")
-                    // The insulin is logged either way; a failed refresh must not show as a failed entry
-                    do {
-                        try await apsManager.determineBasalSync()
-                    } catch {
-                        warning(.bolus, "Determination after external insulin failed", error: error)
-                        await MainActor.run { self.isAwaitingDeterminationResult = false }
-                    }
-                }
+                // perform determine basal sync
+                try await apsManager.determineBasalSync()
+                return true
             } catch {
-                warning(.bolus, "Authentication for external insulin failed", error: error)
-                await MainActor.run {
-                    self.isAwaitingDeterminationResult = false
-                    self.showDeterminationFailureAlert = true
-                    self.determinationFailureMessage = parseAuthenticationError(from: error)
-                }
+                // The insulin is logged either way: the message says so, so it is not read as a failed entry and
+                // logged again. Showing it also stops the spinner; the next loop updates the recommendation.
+                warning(.bolus, "Determination after external insulin failed", error: error)
+                await showSubmissionFailure(ExternalInsulin.loggedButForecastFailedMessage(amount: amount, error: error))
+                return false
             }
         }
 
         // MARK: - Carbs
 
-        func saveMeal() async {
+        /// Saves the meal entered on the screen.
+        /// - Returns: `true` if a meal was saved.
+        @discardableResult func saveMeal() async -> Bool {
             do {
-                guard carbs > 0 || fat > 0 || protein > 0 else { return }
+                guard carbs > 0 || fat > 0 || protein > 0 else { return false }
 
                 await MainActor.run {
                     self.carbs = min(self.carbs, self.maxCarbs)
@@ -733,8 +851,10 @@ extension Treatments {
                     }
                     try await apsManager.determineBasalSync()
                 }
+                return true
             } catch {
                 warning(.treatments, "Saving meal failed", error: error)
+                return false
             }
         }
 
@@ -785,6 +905,9 @@ extension Treatments.StateModel: DeterminationObserver, BolusFailureObserver {
         guard isActive else { return }
 
         DispatchQueue.main.async {
+            // While a bolus is enacted, or a failure is shown, the submission decides when the screen closes.
+            // Closing it here dismissed the "carbs saved, bolus not delivered" alert before the user saw it.
+            guard !self.isEnactingBolus, !self.showDeterminationFailureAlert else { return }
             self.isAwaitingDeterminationResult = false
             if self.addButtonPressed {
                 self.hideModal()
@@ -796,6 +919,8 @@ extension Treatments.StateModel: DeterminationObserver, BolusFailureObserver {
         DispatchQueue.main.async {
             // A dismissed instance may still observe until dealloc — don't hide an unrelated modal.
             guard self.isActive else { return }
+            // The submission reports a failed bolus itself and its alert closes the screen
+            guard !self.isEnactingBolus, !self.showDeterminationFailureAlert else { return }
             self.isAwaitingDeterminationResult = false
             if self.addButtonPressed {
                 self.hideModal()

@@ -4,6 +4,21 @@ import WatchConnectivity
 // MARK: - Send Data to Phone
 
 extension WatchState {
+    /// Rounds a bolus down to a multiple of `increment`, the step the pump can deliver, so the amount shown for
+    /// confirmation is the amount sent. Computed in `Decimal` so e.g. 2.35 U in 0.05 U steps stays 2.35 U.
+    static func bolusRoundedDown(_ amount: Double, toIncrement increment: Decimal) -> Double {
+        guard amount > 0 else { return 0 }
+        guard increment > 0 else { return amount }
+
+        // Drop binary noise from the Double before flooring to whole steps
+        var steps = Decimal(amount) / increment
+        var cleaned = Decimal()
+        NSDecimalRound(&cleaned, &steps, 6, .plain)
+        var wholeSteps = Decimal()
+        NSDecimalRound(&wholeSteps, &cleaned, 0, .down)
+        return NSDecimalNumber(decimal: wholeSteps * increment).doubleValue
+    }
+
     /// Sends the entry confirmed with the crown: its carbs, if any, then the bolus.
     /// Refuses an entry older than `entryLifetime` and clears it instead.
     func sendConfirmedEntry(bolusAmount amount: Double, at now: Date = Date()) {
@@ -14,7 +29,8 @@ extension WatchState {
         if carbs > 0 {
             sendCarbsRequest(carbs, now)
         }
-        sendBolusRequest(Decimal(amount))
+        // Tied to the carbs, so the phone gives no bolus if it refuses or cannot save them
+        sendBolusRequest(Decimal(amount), mealDate: carbs > 0 ? now : nil)
     }
 
     /// Sends a carbs-only entry ("Log Carbs"). Refuses an entry older than `entryLifetime` and clears it instead.
@@ -37,7 +53,8 @@ extension WatchState {
     /// - Parameters:
     ///   - amount: The insulin amount to be delivered
     ///   - pendingOverride: The phone's request to confirm past failed safety checks, if the user just confirmed it
-    func sendBolusRequest(_ amount: Decimal, confirming pendingOverride: PendingBolusOverride? = nil) {
+    ///   - mealDate: The date of the carbs sent just before as part of the same entry, if any
+    func sendBolusRequest(_ amount: Decimal, confirming pendingOverride: PendingBolusOverride? = nil, mealDate: Date? = nil) {
         pendingBolusOverride = nil
 
         guard amount > 0 else {
@@ -56,6 +73,9 @@ extension WatchState {
         var message: [String: Any] = [
             WatchMessageKeys.bolus: amount
         ]
+        if let mealDate {
+            message[WatchMessageKeys.mealDate] = mealDate.timeIntervalSince1970
+        }
         if let pendingOverride {
             message[WatchMessageKeys.overriddenBolusChecks] = pendingOverride.overriddenChecks
             message[WatchMessageKeys.bolusOverrideIssuedAt] = pendingOverride.issuedAt
