@@ -69,6 +69,8 @@ extension Notification.Name {
         resolver.resolve(AppearanceManager.self)!.setupGlobalAppearance()
         _ = resolver.resolve(DeviceDataManager.self)!
         _ = resolver.resolve(APSManager.self)!
+        // Ends timed overrides when they run out, whether or not a screen is open
+        _ = resolver.resolve(AdjustmentManager.self)!
         _ = resolver.resolve(FetchGlucoseManager.self)!
         _ = resolver.resolve(FetchTreatmentsManager.self)!
         _ = resolver.resolve(CalendarManager.self)!

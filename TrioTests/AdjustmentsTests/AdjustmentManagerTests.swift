@@ -173,6 +173,91 @@ import Testing
         #expect(rows.first(where: { $0.name == "Tempbasal" })?.enabled == false)
     }
 
+    // MARK: - Override expiry
+
+    @Test("An override that ran out ends at start plus duration") func testEndExpiredOverrideRecordsExpiry() async throws {
+        let start = Date().addingTimeInterval(-90 * 60)
+        await makeOverride(name: "Bedtime", enabled: true, date: start, duration: 60, indefinite: false)
+
+        let ended = try await manager.endExpiredOverrides()
+
+        let expiry = start.addingTimeInterval(60 * 60)
+        #expect(ended.map(\.name) == ["Bedtime"])
+        #expect(ended.first?.endDate == expiry)
+
+        let runs = try await overrideRuns()
+        #expect(runs.count == 1)
+        #expect(runs.first?.startDate == start)
+        #expect(runs.first?.endDate == expiry, "The run ends when the override ran out, not when it was noticed")
+        #expect(runs.first?.isUploadedToNS == false, "The run is queued for Nightscout")
+        #expect(runs.first?.linkedName == "Bedtime")
+
+        let rows = try await overrides()
+        #expect(rows.first?.enabled == false)
+    }
+
+    @Test("An override that ran out more than a day ago still ends") func testEndLongExpiredOverride() async throws {
+        let start = Date().addingTimeInterval(-30 * 60 * 60)
+        await makeOverride(name: "Weekend", enabled: true, date: start, duration: 120, indefinite: false)
+
+        try await manager.endExpiredOverrides()
+
+        let runs = try await overrideRuns()
+        #expect(runs.first?.endDate == start.addingTimeInterval(120 * 60))
+        #expect(try await overrides().first?.enabled == false)
+    }
+
+    @Test("Indefinite and still-running overrides are left alone") func testEndExpiredOverridesKeepsActive() async throws {
+        await makeOverride(name: "Always", enabled: true, date: Date().addingTimeInterval(-48 * 60 * 60))
+        await makeOverride(
+            name: "Running",
+            enabled: true,
+            date: Date().addingTimeInterval(-30 * 60),
+            duration: 60,
+            indefinite: false,
+            orderPosition: 2
+        )
+
+        let ended = try await manager.endExpiredOverrides()
+
+        #expect(ended.isEmpty)
+        #expect(try await overrideRuns().isEmpty, "Nothing ended, so no run entry is written")
+        let rows = try await overrides()
+        #expect(rows.allSatisfy { $0.enabled })
+    }
+
+    @Test("The algorithm ignores an override that ran out") func testAlgorithmSkipsExpiredOverride() async throws {
+        let now = Date()
+        await makeOverride(
+            name: "Bedtime",
+            enabled: true,
+            date: now.addingTimeInterval(-90 * 60),
+            duration: 60,
+            indefinite: false
+        )
+
+        let names = try await activeOverrideNames(now: now)
+
+        #expect(names.isEmpty, "A 60 minute override started 90 minutes ago no longer applies")
+        #expect(try await overrides().first?.enabled == true, "Reading for the algorithm does not write")
+    }
+
+    @Test("The algorithm applies running and indefinite overrides") func testAlgorithmKeepsActiveOverride() async throws {
+        let now = Date()
+        await makeOverride(
+            name: "Running",
+            enabled: true,
+            date: now.addingTimeInterval(-30 * 60),
+            duration: 60,
+            indefinite: false
+        )
+        #expect(try await activeOverrideNames(now: now) == ["Running"])
+        #expect(try await activeOverrideNames(now: now.addingTimeInterval(30 * 60)).isEmpty, "It stops applying at its expiry")
+
+        await makeOverride(name: "Always", enabled: true, date: now.addingTimeInterval(-20 * 60), orderPosition: 2)
+        #expect(try await activeOverrideNames(now: now.addingTimeInterval(10 * 60 * 60)) == ["Always"])
+    }
+
     // MARK: - Temp targets
 
     @Test("Switching temp targets records the one that ends") func testSwitchTempTargetRecordsRun() async throws {
@@ -281,6 +366,19 @@ import Testing
             row.isUploadedToNS = true
             try? self.testContext.save()
             return row.objectID
+        }
+    }
+
+    /// What `OpenAPS.prepareTrioCustomOrefVariables` reads as the active override.
+    private func activeOverrideNames(now: Date) async throws -> [String?] {
+        let openAPS = OpenAPS(
+            storage: resolver.resolve(FileStorage.self)!,
+            tddStorage: resolver.resolve(TDDStorage.self)!,
+            glucoseStorage: resolver.resolve(GlucoseStorage.self)!,
+            carbsStorage: resolver.resolve(CarbsStorage.self)!
+        )
+        return try await testContext.perform {
+            try openAPS.fetchActiveOverrides(on: self.testContext, now: now).map(\.name)
         }
     }
 

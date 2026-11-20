@@ -90,8 +90,7 @@ extension Home.RootView {
             } else {
                 /// Do not show the Override anymore
                 Task {
-                    guard let objectID = self.latestOverride.first?.objectID else { return }
-                    await state.cancelOverride(withID: objectID)
+                    await state.endExpiredOverrides()
                 }
             }
         }
