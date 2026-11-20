@@ -806,6 +806,8 @@ extension Treatments {
                 try await apsManager.determineBasalSync()
                 return true
             } catch {
+                // The insulin is logged either way: the message says so, so it is not read as a failed entry and
+                // logged again. Showing it also stops the spinner; the next loop updates the recommendation.
                 warning(.bolus, "Determination after external insulin failed", error: error)
                 await showSubmissionFailure(ExternalInsulin.loggedButForecastFailedMessage(amount: amount, error: error))
                 return false

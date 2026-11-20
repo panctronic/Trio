@@ -119,11 +119,11 @@ final class BolusIntentRequest: BaseIntentsRequest {
             // Rounded to the increment but not capped: external insulin up to 3 x max bolus is logged in full
             let bolusQuantity = externalAmount(bolusAmount)
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: bolusQuantity, timestamp: Date())
-            // perform determine basal sync
+            // The insulin is recorded either way; a failed refresh must not read as a failed entry
             do {
                 try await apsManager.determineBasalSync()
             } catch {
-                warning(.bolus, "Determination after Shortcut external insulin failed", error: error)
+                warning(.treatments, "Determination after external insulin from Shortcuts failed", error: error)
                 return ExternalInsulin.loggedButForecastFailedMessage(amount: bolusQuantity, error: error)
             }
 

@@ -7,6 +7,8 @@ enum MultiUsePanelState: Equatable {
     case cgmStale
     case maxIOBZero
     case tidepoolLoginRequired
+    /// Set up before usage data sharing became opt-in and never asked; nothing is sent until answered.
+    case telemetryConsent
     case whatsNew
     case dosingModeLimited(DosingMode)
     case stats
@@ -21,6 +23,7 @@ enum MultiUsePanelState: Equatable {
         maxIOB: Decimal,
         tidepoolLoginRequired: Bool,
         hasUnacknowledgedReleaseNotes: Bool,
+        telemetryConsentUndecided: Bool = false,
         dosingMode: DosingMode,
         now: Date
     ) -> MultiUsePanelState {
@@ -34,6 +37,8 @@ enum MultiUsePanelState: Equatable {
         if maxIOB <= 0 { return .maxIOBZero }
         // Uploads only, so it yields to every dosing-related warning above.
         if tidepoolLoginRequired { return .tidepoolLoginRequired }
+        // A question, not a warning: yields to everything above, and nothing is sent while it waits.
+        if telemetryConsentUndecided { return .telemetryConsent }
         // Informational, so it yields to every warning above but still displaces the stats.
         if hasUnacknowledgedReleaseNotes { return .whatsNew }
         return .stats

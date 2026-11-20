@@ -79,71 +79,88 @@ enum TherapyProfileValidator {
     }
 
     /// The first problem `proposed` has that `current` does not have, or nil. Used for edits of the live settings:
-    /// an edit must not introduce a problem, but a problem the live values already have in a schedule the edit does not
-    /// touch must not block it either, or the user could fix neither schedule.
+    /// an edit must not introduce a problem, but a problem the live values already have must not block it, or the user
+    /// could fix neither that schedule nor another one.
+    ///
+    /// Problems are compared per check, not by message: a schedule's shape problem counts as existing when `current`'s
+    /// schedule has the same one, and a value counts as existing when `current` already has that same offending value in
+    /// that schedule, wherever it starts. So an edit may fix some of several bad entries, or move one, but not add a value
+    /// that `current` did not already have wrong.
     static func validateEdit(
         from current: TrioTherapyProfile,
         to proposed: TrioTherapyProfile,
         basalLimits: TherapyBasalLimits
     ) -> String? {
-        let existing = Set(problems(current, basalLimits: basalLimits))
-        return problems(proposed, basalLimits: basalLimits).first { !existing.contains($0) }
+        let currentSections = sections(current, basalLimits: basalLimits)
+        for (index, section) in sections(proposed, basalLimits: basalLimits).enumerated() {
+            let before = currentSections[index]
+            if let reason = validateSchedule(section.starts, label: section.label),
+               reason != validateSchedule(before.starts, label: before.label)
+            {
+                return reason
+            }
+            let existingBadValues = Set(before.entries.filter { section.problem($0) != nil }.map(\.value))
+            for entry in section.entries where !existingBadValues.contains(entry.value) {
+                if let reason = section.problem(entry) {
+                    return reason
+                }
+            }
+        }
+        return nil
     }
 
-    /// Every reason the profile is not acceptable, at most one per check, in the order `validate` reports them.
-    static func problems(_ profile: TrioTherapyProfile, basalLimits: TherapyBasalLimits) -> [String] {
-        var problems: [String] = []
-        let schedules = [
-            (profile.basal.map(\.seconds), String(localized: "Basal Rates")),
-            (profile.carbRatio.map(\.seconds), String(localized: "Carb Ratios")),
-            (profile.sensitivity.map(\.seconds), String(localized: "Insulin Sensitivities")),
-            (profile.target.map(\.seconds), String(localized: "Glucose Targets"))
+    /// A schedule with its value check, in the order `problems` checks them.
+    private struct Section {
+        let label: String
+        let starts: [Int]
+        let entries: [TherapyScheduleEntry]
+        let problem: (TherapyScheduleEntry) -> String?
+    }
+
+    private static func sections(_ profile: TrioTherapyProfile, basalLimits: TherapyBasalLimits) -> [Section] {
+        let targets = profile.target.map { TherapyScheduleEntry(seconds: $0.seconds, value: $0.low) }
+        return [
+            Section(label: String(localized: "Basal Rates"), starts: profile.basal.map(\.seconds), entries: profile.basal) {
+                basalRateProblem($0, basalLimits: basalLimits)
+            },
+            Section(label: String(localized: "Carb Ratios"), starts: profile.carbRatio.map(\.seconds), entries: profile.carbRatio) {
+                valueProblem($0, range: TherapyProfileLimits.carbRatio, label: String(localized: "Carb Ratio"))
+            },
+            Section(
+                label: String(localized: "Insulin Sensitivities"),
+                starts: profile.sensitivity.map(\.seconds),
+                entries: profile.sensitivity
+            ) {
+                valueProblem($0, range: TherapyProfileLimits.sensitivity, label: String(localized: "ISF"))
+            },
+            Section(label: String(localized: "Glucose Targets"), starts: profile.target.map(\.seconds), entries: targets) {
+                valueProblem($0, range: TherapyProfileLimits.target, label: String(localized: "Target"))
+            }
         ]
-        for (starts, label) in schedules {
-            if let reason = validateSchedule(starts, label: label) {
-                problems.append(reason)
-            }
-        }
-
-        if let reason = validateBasalRates(profile.basal, basalLimits: basalLimits) {
-            problems.append(reason)
-        }
-        if let reason = validateValues(
-            profile.carbRatio,
-            range: TherapyProfileLimits.carbRatio,
-            label: String(localized: "Carb Ratio")
-        ) {
-            problems.append(reason)
-        }
-        if let reason = validateValues(profile.sensitivity, range: TherapyProfileLimits.sensitivity, label: String(localized: "ISF")) {
-            problems.append(reason)
-        }
-        if let reason = validateValues(
-            profile.target.map { TherapyScheduleEntry(seconds: $0.seconds, value: $0.low) },
-            range: TherapyProfileLimits.target,
-            label: String(localized: "Target")
-        ) {
-            problems.append(reason)
-        }
-        return problems
     }
 
-    private static func validateBasalRates(_ basal: [TherapyScheduleEntry], basalLimits: TherapyBasalLimits) -> String? {
-        let allowedRates = basalLimits.allowedRates
-        for entry in basal {
-            let time = timeString(entry.seconds)
-            let rate = entry.value.formatted()
-            if entry.value <= 0 {
-                return String(localized: "Basal rate at \(time) must be greater than 0 U/hr.")
-            }
-            if entry.value > basalLimits.maxBasal + TherapyBasalLimits.tolerance {
-                return String(
-                    localized: "Basal rate \(rate) U/hr at \(time) exceeds the max basal rate of \(basalLimits.maxBasal.formatted()) U/hr."
-                )
-            }
-            if !allowedRates.contains(where: { abs($0 - entry.value) <= TherapyBasalLimits.tolerance }) {
-                return String(localized: "Basal rate \(rate) U/hr at \(time) is not supported by the pump.")
-            }
+    /// Every reason the profile is not acceptable, at most one per check, in the order `validate` reports them:
+    /// the shape of each schedule first, then the values of each.
+    static func problems(_ profile: TrioTherapyProfile, basalLimits: TherapyBasalLimits) -> [String] {
+        let sections = sections(profile, basalLimits: basalLimits)
+        let shapeProblems = sections.compactMap { validateSchedule($0.starts, label: $0.label) }
+        let valueProblems = sections.compactMap { section in section.entries.lazy.compactMap(section.problem).first }
+        return shapeProblems + valueProblems
+    }
+
+    private static func basalRateProblem(_ entry: TherapyScheduleEntry, basalLimits: TherapyBasalLimits) -> String? {
+        let time = timeString(entry.seconds)
+        let rate = entry.value.formatted()
+        if entry.value <= 0 {
+            return String(localized: "Basal rate at \(time) must be greater than 0 U/hr.")
+        }
+        if entry.value > basalLimits.maxBasal + TherapyBasalLimits.tolerance {
+            return String(
+                localized: "Basal rate \(rate) U/hr at \(time) exceeds the max basal rate of \(basalLimits.maxBasal.formatted()) U/hr."
+            )
+        }
+        if !basalLimits.allowedRates.contains(where: { abs($0 - entry.value) <= TherapyBasalLimits.tolerance }) {
+            return String(localized: "Basal rate \(rate) U/hr at \(time) is not supported by the pump.")
         }
         return nil
     }
@@ -206,22 +223,20 @@ enum TherapyProfileValidator {
             .formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: .gmt))
     }
 
-    private static func validateValues(
-        _ entries: [TherapyScheduleEntry],
+    private static func valueProblem(
+        _ entry: TherapyScheduleEntry,
         range: TherapyProfileLimits.Range,
         label: String
     ) -> String? {
-        for entry in entries {
-            let time = timeString(entry.seconds)
-            let value = entry.value.formatted()
-            if entry.value < range.min || entry.value > range.max {
-                return String(
-                    localized: "\(label) \(value) at \(time) is outside \(range.min.formatted())–\(range.max.formatted())."
-                )
-            }
-            if !isMultiple(entry.value - range.min, of: range.step) {
-                return String(localized: "\(label) \(value) at \(time) is not a multiple of \(range.step.formatted()).")
-            }
+        let time = timeString(entry.seconds)
+        let value = entry.value.formatted()
+        if entry.value < range.min || entry.value > range.max {
+            return String(
+                localized: "\(label) \(value) at \(time) is outside \(range.min.formatted())–\(range.max.formatted())."
+            )
+        }
+        if !isMultiple(entry.value - range.min, of: range.step) {
+            return String(localized: "\(label) \(value) at \(time) is not a multiple of \(range.step.formatted()).")
         }
         return nil
     }

@@ -19,7 +19,7 @@ extension AppDiagnostics {
                         VStack(alignment: .leading) {
                             ForEach(DiagnosticsSharingOption.allCases, id: \.self) { option in
                                 Button(action: {
-                                    state.diagnosticsSharingOption = option
+                                    state.select(option)
                                 }) {
                                     HStack(alignment: .top, spacing: 12) {
                                         Image(
@@ -52,9 +52,6 @@ extension AppDiagnostics {
                                 )
                             }
                             .padding()
-                        }
-                        .onChange(of: state.diagnosticsSharingOption) {
-                            state.applyDiagnostics()
                         }
                     }
                 ).listRowBackground(Color.chart)

@@ -5,11 +5,12 @@ extension RemoteControlConfig {
         @Published var units: GlucoseUnits = .mgdL
         @Published var isTrioRemoteControlEnabled: Bool = false
         @Published var sharedSecret: String = ""
+        @Injected() private var keychain: Keychain!
 
         override func subscribe() {
             units = settingsManager.settings.units
             isTrioRemoteControlEnabled = UserDefaults.standard.bool(forKey: "isTrioRemoteControlEnabled")
-            sharedSecret = UserDefaults.standard.string(forKey: "trioRemoteControlSharedSecret") ?? generateInitialSharedSecret()
+            sharedSecret = RemoteControlSecretStore.secret(keychain: keychain) ?? generateInitialSharedSecret()
 
             $isTrioRemoteControlEnabled
                 .receive(on: DispatchQueue.main)
@@ -20,8 +21,9 @@ extension RemoteControlConfig {
 
             $sharedSecret
                 .receive(on: DispatchQueue.main)
-                .sink { value in
-                    UserDefaults.standard.set(value, forKey: "trioRemoteControlSharedSecret")
+                .sink { [weak self] value in
+                    guard let self else { return }
+                    RemoteControlSecretStore.setSecret(value, keychain: self.keychain)
                 }
                 .store(in: &lifetime)
         }
@@ -29,12 +31,12 @@ extension RemoteControlConfig {
         func generateNewSharedSecret() {
             let newSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
             sharedSecret = newSecret
-            UserDefaults.standard.set(newSecret, forKey: "trioRemoteControlSharedSecret")
+            RemoteControlSecretStore.setSecret(newSecret, keychain: keychain)
         }
 
         private func generateInitialSharedSecret() -> String {
             let secret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            UserDefaults.standard.set(secret, forKey: "trioRemoteControlSharedSecret")
+            RemoteControlSecretStore.setSecret(secret, keychain: keychain)
             return secret
         }
     }

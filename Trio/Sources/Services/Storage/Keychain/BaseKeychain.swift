@@ -18,10 +18,18 @@ private let SecValueData = kSecValueData as String
 
 /// KeychainWrapper is a class to help make Keychain access in Swift more straightforward. It is designed to make accessing the Keychain services more like using NSUserDefaults, which is much more familiar to people.
 final class BaseKeychain: Keychain {
+    /// Items hold credentials (Nightscout URL and API secret, the remote control secret, App Attest key IDs), so they
+    /// stay on this device: not synced through iCloud Keychain and not restored onto another device from a backup.
+    /// "After first unlock" keeps them readable in the background (CGM and push wake-ups) as before; only the
+    /// "this device only" part is new. Earlier versions stored synced, migratable items; see `migrateLegacyItems()`.
     enum Config {
-        static let defaultAccessibilityLevel = KeychainItemAccessibility.afterFirstUnlock
-        static let defaultSynchronizable = true
+        static let defaultAccessibilityLevel = KeychainItemAccessibility.afterFirstUnlockThisDeviceOnly
+        static let defaultSynchronizable = false
     }
+
+    /// Services whose legacy items were already migrated in this process.
+    private static var migratedServices = Set<String>()
+    private static let migrationLock = NSLock()
 
     fileprivate enum KeychainSynchronizable {
         case any
@@ -60,6 +68,95 @@ final class BaseKeychain: Keychain {
         defaultSynchronizable = synchronizable
         defaultAccessibilityLevel = accessibilityLevel
         self.accessGroup = accessGroup
+
+        // Reads only see items with this keychain's attributes, so move older items over before anything reads
+        if !synchronizable, accessibilityLevel == Config.defaultAccessibilityLevel {
+            migrateLegacyItemsOncePerProcess()
+        }
+    }
+
+    // MARK: - Migration
+
+    private func migrateLegacyItemsOncePerProcess() {
+        let key = serviceName + "|" + (accessGroup ?? "")
+        Self.migrationLock.lock()
+        defer { Self.migrationLock.unlock() }
+        guard !Self.migratedServices.contains(key) else { return }
+        if migrateLegacyItems() {
+            Self.migratedServices.insert(key)
+        }
+    }
+
+    /// Moves items written by earlier versions (iCloud-synced, or accessibility without "this device only") to
+    /// this keychain's attributes. A synced item is copied to a local item first and only deleted once the copy
+    /// exists; a local item that already exists for the key wins over the synced one. Idempotent.
+    ///
+    /// Returns false when the keychain could not be read (for example before the first unlock after a restart), so
+    /// the caller tries again later; nothing is deleted in that case.
+    @discardableResult func migrateLegacyItems() -> Bool {
+        var query: [String: Any] = [
+            SecClass: kSecClassGenericPassword,
+            SecAttrService: serviceName,
+            SecAttrSynchronizable: kSecAttrSynchronizableAny,
+            SecMatchLimit: kSecMatchLimitAll,
+            SecReturnAttributes: kCFBooleanTrue as Any,
+            SecReturnData: kCFBooleanTrue as Any
+        ]
+        if let accessGroup { query[SecAttrAccessGroup] = accessGroup }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return true }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
+
+        let wanted = defaultAccessibilityLevel.keychainAttrValue as String
+        var succeeded = true
+        // Local items first, so a synced item never overwrites a local one
+        let ordered = items.sorted { !Self.isSynchronized($0) && Self.isSynchronized($1) }
+        for item in ordered {
+            guard let account = item[SecAttrAccount] as? Data else { continue }
+            let accessible = item[SecAttrAccessible] as? String
+
+            if !Self.isSynchronized(item) {
+                guard accessible != wanted else { continue }
+                var match = itemQuery(account: account)
+                match[SecAttrSynchronizable] = kCFBooleanFalse
+                let update = SecItemUpdate(match as CFDictionary, [SecAttrAccessible: wanted] as CFDictionary)
+                if update != errSecSuccess { succeeded = false }
+                continue
+            }
+
+            guard let data = item[SecValueData] as? Data else { continue }
+            var add = itemQuery(account: account)
+            add[SecAttrSynchronizable] = kCFBooleanFalse
+            add[SecAttrAccessible] = wanted
+            add[SecAttrGeneric] = account
+            add[SecValueData] = data
+            let added = SecItemAdd(add as CFDictionary, nil)
+            guard added == errSecSuccess || added == errSecDuplicateItem else {
+                succeeded = false
+                continue
+            }
+            var synced = itemQuery(account: account)
+            synced[SecAttrSynchronizable] = kCFBooleanTrue
+            let deleted = SecItemDelete(synced as CFDictionary)
+            if deleted != errSecSuccess, deleted != errSecItemNotFound { succeeded = false }
+        }
+        return succeeded
+    }
+
+    private func itemQuery(account: Data) -> [String: Any] {
+        var query: [String: Any] = [
+            SecClass: kSecClassGenericPassword,
+            SecAttrService: serviceName,
+            SecAttrAccount: account
+        ]
+        if let accessGroup { query[SecAttrAccessGroup] = accessGroup }
+        return query
+    }
+
+    private static func isSynchronized(_ item: [String: Any]) -> Bool {
+        (item[SecAttrSynchronizable] as? Bool) ?? ((item[SecAttrSynchronizable] as? NSNumber)?.boolValue ?? false)
     }
 
     // MARK: - Public Methods

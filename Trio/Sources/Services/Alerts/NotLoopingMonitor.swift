@@ -75,7 +75,9 @@ final class NotLoopingMonitor: Injectable {
     init(resolver: Resolver) {
         injectServices(resolver)
         automationEnabled = settingsManager.settings.dosingMode.automation != AutomationLevel.off
-        subscribe(to: apsManager.lastLoopDateSubject.eraseToAnyPublisher())
+        // All state changes land on main: loop dates are sent from the loop's task, the pump flags from the pump's
+        // queue, settings and snooze notifications on main.
+        subscribe(to: apsManager.lastLoopDateSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher())
         subscribe(
             suspension: deviceDataManager.suspended.receive(on: DispatchQueue.main).eraseToAnyPublisher(),
             manualTempBasal: deviceDataManager.manualTempBasal.receive(on: DispatchQueue.main).eraseToAnyPublisher()

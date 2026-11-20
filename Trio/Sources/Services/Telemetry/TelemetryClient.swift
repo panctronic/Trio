@@ -47,17 +47,45 @@ actor TelemetrySendGate {
     }
 }
 
+// MARK: - Consent
+
+/// The user's telemetry choice. Telemetry is opt-in: only an explicit yes allows any telemetry network request
+/// (registration, App Attest, check-in). Not having chosen yet (`nil`) sends nothing, exactly like an opt-out.
+enum TelemetryConsent: Equatable {
+    case undecided
+    case optedIn
+    case optedOut
+
+    init(flag: Bool?) {
+        switch flag {
+        case .none: self = .undecided
+        case .some(true): self = .optedIn
+        case .some(false): self = .optedOut
+        }
+    }
+
+    static var current: TelemetryConsent { TelemetryConsent(flag: PropertyPersistentFlags.shared.telemetrySharingEnabled) }
+
+    var allowsSending: Bool { self == .optedIn }
+
+    /// Whether to ask an existing user (onboarding already done) for a choice.
+    func needsPrompt(onboardingCompleted: Bool) -> Bool {
+        self == .undecided && onboardingCompleted
+    }
+}
+
 // MARK: - TelemetryClient
 
-/// Opt-out anonymous usage check-in. Sends a small JSON payload to a self-hosted
-/// endpoint at most once every 24 hours, plus once after a new build is installed.
-/// Enabled by default; users can opt out in Settings → Features → App Diagnostics.
+/// Opt-in usage check-in. Once the user has agreed (onboarding, the one-time
+/// Home prompt, or Settings → Features → App Diagnostics), sends a small JSON
+/// payload to a self-hosted endpoint at most once every 24 hours, plus once
+/// after a new build is installed.
 ///
 /// No health data, credentials, or personally-identifying information is sent.
 /// See `buildPayload()` for the exact set of fields and `TelemetryPreviewView`
 /// for the in-app inspector that renders the same payload.
-/// Opted-out installs send only an empty daily `/anonymous` GET carrying the
-/// app version, install identifier, trigger reason, and prior failure category.
+/// Until the user opts in, and after they opt out, no telemetry request of any
+/// kind is made; see `TelemetryConsent`.
 final class TelemetryClient: Injectable {
     // Container-scoped singleton; resolving pulls the APS/device graph, so only touch after loadServices()
     static var shared: TelemetryClient { TrioApp.resolver.resolve(TelemetryClient.self)! }
@@ -154,9 +182,8 @@ final class TelemetryClient: Injectable {
         return new
     }
 
-    /// Materializes the per-install identifier regardless of the telemetry
-    /// sharing preference so both identified and anonymous cadence paths have
-    /// a stable installation header when they run.
+    /// Materializes the per-install identifier. Only called once the user has
+    /// opted in; nothing creates it before then.
     func initializeInstallID() {
         _ = installId()
     }
@@ -172,8 +199,8 @@ final class TelemetryClient: Injectable {
         return PropertyPersistentFlags.shared.telemetryLastSentSha != currentSha
     }
 
-    /// Arms (or re-arms) the 24h send timer. Idempotent and active for both
-    /// full and anonymous telemetry. Best-effort fallback only: GCD timers
+    /// Arms (or re-arms) the 24h send timer. Idempotent; every tick checks
+    /// consent before doing anything. Best-effort fallback only: GCD timers
     /// don't advance while the app is
     /// suspended, so on iOS this effectively means "fires only if the app
     /// stays foregrounded for 24h." Daily cadence is instead driven by
@@ -200,30 +227,23 @@ final class TelemetryClient: Injectable {
 
     /// Awaitable daily-cadence entry point. All trigger paths pass through the
     /// actor gate, preventing overlapping requests and enforcing a one-hour
-    /// retry delay after an unsuccessful attempt.
+    /// retry delay after an unsuccessful attempt. Does nothing without consent.
     @discardableResult func sendIfOverdue(reason: SendReason, now: Date = Date()) async -> Bool {
-        let sharingEnabled = PropertyPersistentFlags.shared.telemetrySharingEnabled != false
-        let lastSentAt = sharingEnabled ?
-            PropertyPersistentFlags.shared.telemetryLastSentAt :
-            PropertyPersistentFlags.shared.telemetryAnonymousLastSentAt
+        guard TelemetryConsent.current.allowsSending else { return false }
 
         return await sendGate.runIfEligible(
             now: now,
-            lastSentAt: lastSentAt,
+            lastSentAt: PropertyPersistentFlags.shared.telemetryLastSentAt,
             lastAttemptAt: PropertyPersistentFlags.shared.telemetryLastAttemptAt,
             minimumInterval: Self.dailyInterval,
             retryInterval: Self.retryInterval
         ) { [weak self] in
             guard let self else { return false }
-            return sharingEnabled ? await send(reason: reason) : await sendAnonymous(reason: reason)
+            return await send(reason: reason)
         } onAttempt: {
             PropertyPersistentFlags.shared.telemetryLastAttemptAt = now
         } onSuccess: {
-            if sharingEnabled {
-                self.recordSuccessfulSend()
-            } else {
-                self.recordSuccessfulAnonymousSend()
-            }
+            self.recordSuccessfulSend()
         }
     }
 
@@ -240,11 +260,11 @@ final class TelemetryClient: Injectable {
     }
 
     /// Single entry point for all sends (scheduler tick, settings opt-in,
-    /// startup SHA-change). Gated only on the opt-out flag. *When* to send is
+    /// startup SHA-change). Gated only on consent. *When* to send is
     /// the caller's decision — startup handles the SHA-change shortcut, the
     /// timer handles 24h cadence.
     func maybeSend(reason: SendReason = .manual) async {
-        guard PropertyPersistentFlags.shared.telemetrySharingEnabled != false else {
+        guard TelemetryConsent.current.allowsSending else {
             return
         }
         _ = await sendGate.runIfEligible(
@@ -261,6 +281,21 @@ final class TelemetryClient: Injectable {
         } onSuccess: {
             self.recordSuccessfulSend()
         }
+    }
+
+    // MARK: - Consent
+
+    /// Stores the user's explicit choice. Opting in arms the daily cadence and sends the first check-in right away;
+    /// opting out (or staying undecided) leaves every telemetry path inert, since each one checks consent first.
+    static func recordConsent(_ granted: Bool) {
+        let wasOptedIn = TelemetryConsent.current.allowsSending
+        PropertyPersistentFlags.shared.telemetrySharingEnabled = granted
+        info(.telemetry, "Usage data sharing \(granted ? "enabled" : "disabled") by the user")
+        guard granted, !wasOptedIn else { return }
+        let client = shared
+        client.initializeInstallID()
+        client.scheduleRecurring()
+        Task.detached { await client.maybeSend(reason: .optIn) }
     }
 
     // MARK: - Payload
@@ -372,10 +407,6 @@ final class TelemetryClient: Injectable {
         PropertyPersistentFlags.shared.telemetryLastAttemptAt = nil
     }
 
-    private func recordSuccessfulAnonymousSend() {
-        PropertyPersistentFlags.shared.telemetryAnonymousLastSentAt = Date()
-        PropertyPersistentFlags.shared.telemetryLastAttemptAt = nil
-    }
 
     private func requestContext(reason: SendReason) -> TelemetryRequestContext {
         TelemetryRequestContext(
@@ -393,37 +424,6 @@ final class TelemetryClient: Injectable {
         Bundle.main.appDevVersion ??
             (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ??
             "unknown"
-    }
-
-    private func sendAnonymous(reason: SendReason) async -> Bool {
-        func failed(_ reason: String) -> Bool {
-            PropertyPersistentFlags.shared.telemetryLastFailureReason = reason
-            return false
-        }
-
-        let context = requestContext(reason: reason)
-        guard let baseURL = Self.baseURL,
-              var request = Self.anonymousRequest(baseURL: baseURL, context: context)
-        else { return failed("anonymous_request_url_failed") }
-
-        request.timeoutInterval = 15
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                return failed("anonymous_non_http_response")
-            }
-            guard (200 ..< 300).contains(http.statusCode) else {
-                warning(.telemetry, "Anonymous send failed with HTTP \(http.statusCode)")
-                return failed("anonymous_http_\(http.statusCode)")
-            }
-            PropertyPersistentFlags.shared.telemetryLastFailureReason = nil
-            info(.telemetry, "Anonymous send succeeded")
-            return true
-        } catch {
-            warning(.telemetry, "Anonymous send failed", error: error)
-            return failed("anonymous_request_failed")
-        }
     }
 
     /// Build payload, attest it via App Attest, and POST it. Returns success on
@@ -563,20 +563,6 @@ final class TelemetryClient: Injectable {
             reason: reason.rawValue,
             lastFailureReason: lastFailureReason
         )
-    }
-
-    static func anonymousRequest(baseURL: URL, context: TelemetryRequestContext) -> URLRequest? {
-        guard let url = TelemetryAttestor.requestURL(
-            baseURL: baseURL,
-            path: "anonymous",
-            reason: context.reason,
-            lastFailureReason: context.lastFailureReason
-        ) else { return nil }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        context.applyHeaders(to: &request)
-        return request
     }
 
     /// `iPhone15,2`-style identifier from `utsname.machine`. Returns

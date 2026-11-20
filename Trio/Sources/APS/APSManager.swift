@@ -121,7 +121,7 @@ enum APSError: LocalizedError {
 actor LoopGuard {
     private var isRunning = false
     private var isDeterminingStandalone = false
-    private var loopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var loopWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
     private var standaloneWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     /// Atomically checks whether a new loop can start and marks it as running if so.
@@ -139,13 +139,24 @@ actor LoopGuard {
         isRunning = false
         let waiters = loopWaiters
         loopWaiters.removeAll()
-        waiters.forEach { $0.resume() }
+        waiters.values.forEach { $0.resume(returning: true) }
     }
 
-    /// Returns once no loop is running.
-    func waitForLoop() async {
-        guard isRunning else { return }
-        await withCheckedContinuation { loopWaiters.append($0) }
+    /// Returns true once no loop is running, or false if one is still running after `timeout`.
+    func waitForLoop(timeout: TimeInterval) async -> Bool {
+        guard isRunning else { return true }
+        let waiterID = UUID()
+        return await withCheckedContinuation { continuation in
+            loopWaiters[waiterID] = continuation
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+                await self?.timeOutLoopWaiter(waiterID)
+            }
+        }
+    }
+
+    private func timeOutLoopWaiter(_ waiterID: UUID) {
+        loopWaiters.removeValue(forKey: waiterID)?.resume(returning: false)
     }
 
     /// Claims the guard for a determination that runs outside the loop. If another one is running it
@@ -405,7 +416,15 @@ final class BaseAPSManager: APSManager, Injectable {
 
             // Inside the loop guard and background task, before determining: the switch can't interleave with a
             // running loop, and this loop doses with the new profile.
-            await self.therapyProfileManager?.runDueScheduledSwitch(inLoop: true)
+            if let therapyProfileManager = self.therapyProfileManager {
+                do {
+                    try await withTimeout(seconds: Self.scheduledSwitchWait) {
+                        await therapyProfileManager.runDueScheduledSwitch(inLoop: true)
+                    }
+                } catch {
+                    warning(.loop, "Scheduled profile switch did not finish in time, looping with the current profile")
+                }
+            }
 
             let loopStartDate = Date()
             lastLoopStartDate = loopStartDate
@@ -496,6 +515,11 @@ final class BaseAPSManager: APSManager, Injectable {
         determinationID: NSManagedObjectID?,
         loopStatRecord: LoopStats
     ) async {
+        // Record a success before releasing the guard: a loop() arriving in between would otherwise see the previous
+        // loop's date, skip the minimum interval and run straight after this one (with a possible second SMB).
+        if error == nil {
+            lastLoopDate = Date()
+        }
         await loopGuard.finish()
         isLooping.send(false)
 
@@ -504,7 +528,6 @@ final class BaseAPSManager: APSManager, Injectable {
             processError(error)
         } else {
             info(.loop, "Loop finished in \(String(format: "%.1f", Date().timeIntervalSince(loopStatRecord.start))) s")
-            lastLoopDate = Date()
             lastError.send(nil)
             transientCategoryLock.withLock {
                 transientCategoryFirstSeen.removeAll()
@@ -570,12 +593,28 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Returns the object ID of the stored determination this run produced.
     @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
-        // TDD only feeds Dynamic ISF, which falls back to the stored history (and is turned off for the run when there
-        // is not enough of it), so a failed calculation must not stop the loop from dosing.
+        // TDD only feeds Dynamic ISF, which works from the stored TDD history (the two-hour average falls back to the
+        // ten-day one when no recent TDD was stored, and Dynamic ISF is off for the run without enough history), so a
+        // failed calculation must not stop the loop from dosing. Repeated failures are surfaced to the user.
         do {
             try await calculateAndStoreTDD()
+            transientCategoryLock.withLock { consecutiveTDDFailures = 0 }
         } catch {
             warning(.loop, "Calculating the total daily dose failed, determining without updating it", error: error)
+            let failures = transientCategoryLock.withLock { () -> Int in
+                consecutiveTDDFailures += 1
+                return consecutiveTDDFailures
+            }
+            if Self.shouldAlertTDDFailure(consecutiveFailures: failures) {
+                issueAlertForError(
+                    APSError.apsError(
+                        message: String(
+                            localized: "The total daily dose could not be calculated \(failures) times in a row. Trio keeps looping, with Dynamic ISF using the stored history. \(error.localizedDescription)"
+                        )
+                    ),
+                    category: .algorithmError
+                )
+            }
         }
 
         var invalidGlucoseError: String?
@@ -673,7 +712,10 @@ final class BaseAPSManager: APSManager, Injectable {
     }
 
     func determineBasalSync() async throws {
-        await loopGuard.waitForLoop()
+        guard await loopGuard.waitForLoop(timeout: Self.loopWait) else {
+            warning(.loop, "Standalone determination not run: the running loop did not finish in time")
+            throw APSError.apsError(message: "The loop is still running. The next loop will update the recommendation.")
+        }
         // Never return as if a fresh determination ran when it did not: callers rely on it after
         // a bolus, carb entry or adjustment.
         guard await loopGuard.claimStandaloneDetermination(timeout: Self.standaloneDeterminationWait) else {
@@ -688,6 +730,14 @@ final class BaseAPSManager: APSManager, Injectable {
         }
         await loopGuard.finishStandaloneDetermination()
     }
+
+    /// How long a standalone determination waits for a running loop before giving up. A loop holding the guard longer
+    /// than this is stuck; callers must not wait on it forever.
+    private static let loopWait: TimeInterval = 120
+
+    /// How long the loop gives a due scheduled profile switch before going on without it. The pump write inside it has
+    /// its own, shorter timeout; this only catches a switch held up elsewhere.
+    private static let scheduledSwitchWait: TimeInterval = 60
 
     /// How long a standalone determination waits for one already running before giving up.
     private static let standaloneDeterminationWait: TimeInterval = 60
@@ -1032,6 +1082,14 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Errors arrive from the pump's queue, the loop task and bolus tasks at once; guarded by `transientCategoryLock`.
     private let transientCategoryLock = NSLock()
+    /// Guarded by `transientCategoryLock`.
+    private var consecutiveTDDFailures = 0
+
+    /// Alert on the third failure in a row (a quarter hour of loops), then once an hour while it lasts.
+    static func shouldAlertTDDFailure(consecutiveFailures: Int) -> Bool {
+        consecutiveFailures >= 3 && (consecutiveFailures - 3) % 12 == 0
+    }
+
     private var transientCategoryFirstSeen: [String: Date] = [:]
     private var transientCategoryCount: [String: Int] = [:]
     private static let transientDwellThreshold: TimeInterval = 60

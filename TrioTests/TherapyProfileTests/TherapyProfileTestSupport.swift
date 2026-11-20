@@ -146,6 +146,8 @@ final class TherapyProfileTestRecorder: Broadcaster, BasalProfileObserver, Thera
     var liveBasal: () -> [Decimal] = { [] }
     /// Awaited inside every pump write, to hold an operation in flight.
     var pumpGate: (() async -> Void)?
+    /// Seconds a pump write may take before it counts as failed.
+    var pumpSyncTimeout: TimeInterval = BaseTherapyProfileManager.pumpSyncTimeout
 
     var pumpWrites: Int { events.filter { if case .pump = $0 { return true } else { return false } }.count }
 
@@ -198,7 +200,8 @@ final class TherapyProfileTestAssembly: Assembly {
                 bolusInProgress: { recorder.bolusInProgress },
                 recompute: { await recorder.recompute() },
                 now: { recorder.now },
-                calendar: TherapyProfileTestRecorder.calendar
+                calendar: TherapyProfileTestRecorder.calendar,
+                pumpSyncTimeout: { recorder.pumpSyncTimeout }
             )
         }.inObjectScope(.container)
     }

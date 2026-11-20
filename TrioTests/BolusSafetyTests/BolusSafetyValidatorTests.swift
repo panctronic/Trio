@@ -60,6 +60,16 @@ import Testing
         #expect(BolusSafetyEvaluator.usableIOB(nil, now: now) == nil)
     }
 
+    @Test("The recent-bolus window reaches back to the IOB calculation time") func windowCoversIOBAge() {
+        let now = Date()
+        let iobDate = now.addingTimeInterval(-9 * 60)
+        #expect(BolusSafetyEvaluator.recentBolusWindowStart(now: now, iobDate: iobDate) == iobDate)
+        // Fresher IOB keeps the usual six-minute window.
+        let fresh = now.addingTimeInterval(-2 * 60)
+        #expect(BolusSafetyEvaluator.recentBolusWindowStart(now: now, iobDate: fresh) == now.addingTimeInterval(-6 * 60))
+        #expect(BolusSafetyEvaluator.recentBolusWindowStart(now: now, iobDate: nil) == now.addingTimeInterval(-6 * 60))
+    }
+
     @Test("Stale IOB blocks the bolus") func testStaleIOBRejects() {
         let now = Date()
         let inputs = BolusSafetyInputs(

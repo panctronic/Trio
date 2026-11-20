@@ -55,10 +55,21 @@ final class Redactor {
 
     static let minimumLength = 4
 
-    // Values only ever seen in transit, never stored on this phone
+    // Values only ever seen in transit, never stored on this phone; and, as a backstop for credentials neither stored
+    // now nor remembered in `CredentialHistory` (older than that, or from before it existed), the places where
+    // credentials appear in requests. Values already replaced start with "<" and are left alone.
     private static let inTransitRules: [InTransitRule] = [
         ("Command Type:", #"\bUser: ([^.\n]{1,64})\. Command Type:"#, Kind.remoteUser),
-        ("Fleet secret:", #"Fleet secret: ([^\n]+)"#, Kind.secret)
+        ("Fleet secret:", #"Fleet secret: ([^\n]+)"#, Kind.secret),
+        // Nightscout's api-secret header / parameter carries the secret's SHA-1
+        ("api-secret", #"(?i)api-secret["']?\s*[:=]\s*["']?([0-9a-f]{40})(?![0-9a-z])"#, Kind.apiSecret),
+        // Nightscout access tokens and OAuth tokens in query strings and form bodies
+        (
+            "token=",
+            #"(?i)(?:^|[?&\s"'])(?:token|access_token|refresh_token|id_token)=([^&\s"'<>]{4,})"#,
+            Kind.secret
+        ),
+        ("bearer ", #"(?i)\bBearer ([A-Za-z0-9._~+/=-]{8,})"#, Kind.secret)
     ].compactMap { marker, pattern, kind in
         (try? NSRegularExpression(pattern: pattern)).map { InTransitRule(marker: marker, regex: $0, kind: kind) }
     }

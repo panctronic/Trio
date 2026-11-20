@@ -43,6 +43,27 @@ import Testing
         #expect(TherapyProfileValidator.validateEdit(from: tooHighBasal, to: fine, basalLimits: limits) == nil)
     }
 
+    @Test("An edit may fix one of several bad entries") func editFixesOneOfTwo() {
+        let twoTooHigh = TherapyProfileFixtures.profile("Live", basal: [(0, 3.5), (21600, 3.5)])
+        let oneFixed = TherapyProfileFixtures.profile("Live", basal: [(0, 1), (21600, 3.5)])
+        #expect(TherapyProfileValidator.validateEdit(from: twoTooHigh, to: oneFixed, basalLimits: limits) == nil)
+    }
+
+    @Test("An edit may move a bad entry, but not change it to another bad value") func editMovesBadEntry() {
+        let live = TherapyProfileFixtures.profile("Live", basal: [(0, 1), (21600, 3.5)])
+        let moved = TherapyProfileFixtures.profile("Live", basal: [(0, 1), (28800, 3.5)])
+        #expect(TherapyProfileValidator.validateEdit(from: live, to: moved, basalLimits: limits) == nil)
+        let higher = TherapyProfileFixtures.profile("Live", basal: [(0, 1), (21600, 4)])
+        #expect(TherapyProfileValidator.validateEdit(from: live, to: higher, basalLimits: limits) != nil)
+    }
+
+    @Test("problems lists one problem per check in validate's order") func problemsOrder() {
+        let profile = TherapyProfileFixtures.profile("Bad", basal: [(0, 3.5)], carbratio: [(0, 0.5)])
+        let problems = TherapyProfileValidator.problems(profile, basalLimits: limits)
+        #expect(problems.count == 2)
+        #expect(problems.first == TherapyProfileValidator.validate(profile, basalLimits: limits))
+    }
+
     @Test("Max basal itself is accepted") func maxBasalAccepted() {
         #expect(
             TherapyProfileValidator
