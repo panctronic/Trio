@@ -226,7 +226,11 @@ struct CurrentGlucoseView: View {
         HStack {
             if let glucoseValue = glucose.last?.glucose, isReadingFresh {
                 let displayGlucose = Decimal(glucoseValue).formatted(for: units)
-                Text(glucoseValue == 400 ? "HIGH" : displayGlucose)
+                Text(
+                    glucoseValue == 400
+                        ? String(localized: "HIGH", comment: "Shown instead of the glucose value at the top of the sensor range")
+                        : displayGlucose
+                )
                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .foregroundStyle(glucoseColor(for: glucoseValue))
             } else {
@@ -332,10 +336,12 @@ struct CurrentGlucoseView: View {
                     "hourglass"
                 )
             }
-            return ("Warming up", "Warming up", .orange, "hourglass")
+            let warmingUp = String(localized: "Warming up", comment: "CGM sensor status tag on the glucose bobble")
+            return (warmingUp, warmingUp, .orange, "hourglass")
         }
         if isStabilizing {
-            return ("Stabilizing", "Stabilizing", .orange, "hourglass")
+            let stabilizing = String(localized: "Stabilizing", comment: "CGM sensor status tag on the glucose bobble")
+            return (stabilizing, stabilizing, .orange, "hourglass")
         }
         if let status = cgmStatus {
             // Only the normal tier is gated to the arc's 48h window; a warning

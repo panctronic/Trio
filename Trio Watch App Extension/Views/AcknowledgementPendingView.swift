@@ -35,7 +35,7 @@ struct AcknowledgementPendingView: View {
                 VStack {
                     if state.isMealBolusCombo {
                         ProgressView()
-                        Text(state.mealBolusStep.rawValue).multilineTextAlignment(.center)
+                        Text(state.mealBolusStep.localizedDescription).multilineTextAlignment(.center)
                     } else if state.showAcknowledgmentBanner {
                         statusIcon.padding()
                         Text(state.acknowledgmentMessage).multilineTextAlignment(.center)
@@ -64,6 +64,16 @@ struct AcknowledgementPendingView: View {
         .onDisappear {
             state.shouldNavigateToRoot = true
             state.pendingBolusOverride = nil
+        }
+    }
+}
+
+private extension MealBolusStep {
+    /// The raw values are fixed English; show the translated text.
+    var localizedDescription: String {
+        switch self {
+        case .savingCarbs: String(localized: "Saving Carbs...", comment: "Watch progress while carbs are saved")
+        case .enactingBolus: String(localized: "Enacting Bolus...", comment: "Watch progress while a bolus is sent")
         }
     }
 }

@@ -1107,6 +1107,12 @@
     "Decrease carbs" : {
 
     },
+    "Enacting Bolus..." : {
+      "comment" : "Watch progress while a bolus is sent"
+    },
+    "HIGH" : {
+      "comment" : "Shown instead of the glucose value at the top of the sensor range"
+    },
     "Increase bolus" : {
 
     },
@@ -1130,6 +1136,9 @@
     },
     "outdated" : {
       "comment" : "Accessibility: a glucose reading that is no longer current"
+    },
+    "Stabilizing" : {
+      "comment" : "CGM sensor status tag on the glucose bobble"
     },
     "Subtracts %@" : {
       "comment" : "Accessibility hint for the watch bolus minus button; %@ is an amount like \"0.05 units\""
@@ -1157,6 +1166,9 @@
     },
     "updated at %@" : {
       "comment" : "Accessibility: Live Activity update time; %@ is a clock time"
+    },
+    "Warming up" : {
+      "comment" : "CGM sensor status tag on the glucose bobble"
     },
     " " : {
       "localizations" : {
