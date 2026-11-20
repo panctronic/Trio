@@ -348,6 +348,9 @@ extension BaseTidepoolManager {
             return
         }
         guard !carbs.isEmpty else { return }
+        // One Sync Status record per pass: a failed batch is not hidden by a later one that went through.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .tidepool, .carbs) }
 
         for chunk in carbs.chunks(ofCount: tidepoolService.carbDataLimit ?? 100) {
             guard await uploadSerializer.isCurrent(generation) else { return }
@@ -361,12 +364,12 @@ extension BaseTidepoolManager {
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) carb entries to Tidepool")
-                syncStatusTracker.recordSuccess(.tidepool, .carbs)
+                outcome.succeeded()
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateCarbsAsUploaded(Array(chunk))
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(chunk.count) carb entries failed", error: error)
-                syncStatusTracker.recordFailure(.tidepool, .carbs, error: error)
+                outcome.failed(error)
             }
         }
     }
@@ -429,6 +432,9 @@ extension BaseTidepoolManager {
             return
         }
         guard !events.isEmpty else { return }
+        // One Sync Status record per pass: a failed batch is not hidden by a later one that went through.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .tidepool, .treatments) }
 
         do {
             let context = CoreDataStack.shared.newTaskContext()
@@ -516,14 +522,14 @@ extension BaseTidepoolManager {
             switch doseResult {
             case .success:
                 info(.tidepool, "Uploaded \(insulinDoseEvents.count) dose entries to Tidepool")
-                syncStatusTracker.recordSuccess(.tidepool, .treatments)
+                if !insulinDoseEvents.isEmpty { outcome.succeeded() }
                 let insulinEvents = events.filter {
                     $0.type == .tempBasal || $0.type == .tempBasalDuration || $0.type == .bolus
                 }
                 await updateInsulinAsUploaded(insulinEvents)
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(insulinDoseEvents.count) dose entries failed", error: error)
-                syncStatusTracker.recordFailure(.tidepool, .treatments, error: error)
+                outcome.failed(error)
             }
 
             guard await uploadSerializer.isCurrent(generation) else { return }
@@ -534,12 +540,13 @@ extension BaseTidepoolManager {
             switch pumpResult {
             case .success:
                 info(.tidepool, "Uploaded \(pumpEvents.count) pump events to Tidepool")
-                syncStatusTracker.recordSuccess(.tidepool, .treatments)
+                // Usually empty: boluses and temp basals go out as doses above.
+                if !pumpEvents.isEmpty { outcome.succeeded() }
                 let pumpEventsToMark = events.filter { $0.type.mapEventTypeToPumpEventType() != nil }
                 await updateInsulinAsUploaded(pumpEventsToMark)
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(pumpEvents.count) pump events failed", error: error)
-                syncStatusTracker.recordFailure(.tidepool, .treatments, error: error)
+                outcome.failed(error)
             }
         } catch {
             warning(.tidepool, "Failed to prepare dose entries for Tidepool upload", error: error)
@@ -829,6 +836,9 @@ extension BaseTidepoolManager {
             return
         }
         guard !glucose.isEmpty else { return }
+        // One Sync Status record per pass: a failed batch is not hidden by a later one that went through.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .tidepool, .glucose) }
 
         for chunk in glucose.chunks(ofCount: tidepoolService.glucoseDataLimit ?? 100) {
             guard await uploadSerializer.isCurrent(generation) else { return }
@@ -840,12 +850,12 @@ extension BaseTidepoolManager {
             switch result {
             case .success:
                 info(.tidepool, "Uploaded \(chunk.count) glucose values to Tidepool")
-                syncStatusTracker.recordSuccess(.tidepool, .glucose)
+                outcome.succeeded()
                 // After successful upload, update the isUploadedToTidepool flag in Core Data
                 await updateGlucoseAsUploaded(Array(chunk))
             case let .failure(error):
                 warning(.tidepool, "Tidepool upload of \(chunk.count) glucose values failed", error: error)
-                syncStatusTracker.recordFailure(.tidepool, .glucose, error: error)
+                outcome.failed(error)
             }
         }
     }

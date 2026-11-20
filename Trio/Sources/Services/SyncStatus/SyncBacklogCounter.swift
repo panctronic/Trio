@@ -42,25 +42,25 @@ struct SyncBacklogCounter {
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .overrides,
                     entityName: "OverrideStored",
                     predicate: .lastActiveAdjustmentNotYetUploadedToNightscout,
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .overrides,
                     entityName: "OverrideRunStored",
                     predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .tempTargets,
                     entityName: "TempTargetStored",
                     predicate: .lastActiveAdjustmentNotYetUploadedToNightscout,
                     dateKey: "date"
                 ),
                 PendingQuery(
-                    kind: .adjustments,
+                    kind: .tempTargets,
                     entityName: "TempTargetRunStored",
                     predicate: .adjustmentRunsNotYetUploadedToNightscout,
                     dateKey: "endDate"

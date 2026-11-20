@@ -81,6 +81,72 @@ private final class SyncTestClock: Sendable {
     }
 }
 
+@Suite("Sync pass outcome") struct SyncPassOutcomeTests {
+    @Test("A failed batch is not hidden by a later batch that went through") func failureWins() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordSuccess(.tidepool, .glucose)
+
+        var pass = SyncPassOutcome()
+        pass.failed(SyncTestError(errorDescription: "HTTP 503"))
+        pass.succeeded()
+        tracker.record(pass, .tidepool, .glucose)
+
+        #expect(tracker.snapshot[.tidepool].failures[.glucose]?.message == "HTTP 503")
+    }
+
+    @Test("The first failure of a pass is the one recorded") func firstFailure() {
+        var pass = SyncPassOutcome.failure(message: "first")
+        pass.merge(.failure(message: "second"))
+        pass.merge(.success)
+        #expect(pass.firstFailureMessage == "first")
+    }
+
+    @Test("A pass that sent nothing records nothing") func emptyPass() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordFailure(.nightscout, .overrides, message: "offline")
+
+        var pass = SyncPassOutcome()
+        pass.merge(SyncPassOutcome())
+        #expect(pass.isEmpty)
+        tracker.record(pass, .nightscout, .overrides)
+
+        #expect(tracker.snapshot[.nightscout].failures[.overrides]?.message == "offline")
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.overrides] == nil)
+    }
+
+    @Test("A pass where every part went through clears the failure") func allSucceeded() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordFailure(.nightscout, .carbs, message: "offline")
+
+        var pass = SyncPassOutcome.success
+        pass.merge(SyncPassOutcome())
+        pass.merge(.success)
+        tracker.record(pass, .nightscout, .carbs)
+
+        #expect(tracker.snapshot[.nightscout].failures[.carbs] == nil)
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.carbs] != nil)
+    }
+
+    @Test("Overrides and temp targets are tracked apart") func adjustmentsSeparate() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.record(.failure(message: "offline"), .nightscout, .overrides)
+        tracker.record(.success, .nightscout, .tempTargets)
+        #expect(tracker.snapshot[.nightscout].failures[.overrides] != nil)
+    }
+
+    @Test("Kinds from another version are skipped when the record is read") func unknownKindsAreSkipped() throws {
+        let json = """
+        {"destinations":{"nightscout":{"lastSuccess":{"glucose":"2027-01-15T08:00:00.000Z","adjustments":"2027-01-15T08:00:00.000Z"},\
+        "failures":{"adjustments":{"kind":"adjustments","message":"x","date":"2027-01-15T08:00:00.000Z"},\
+        "carbs":{"kind":"carbs","message":"HTTP 500","date":"2027-01-15T08:00:00.000Z"}}}}}
+        """
+        let snapshot = try JSONCoding.decoder.decode(SyncStatusSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot[.nightscout].lastSuccess.keys.sorted { $0.rawValue < $1.rawValue } == [.glucose])
+        #expect(snapshot[.nightscout].failures.keys.sorted { $0.rawValue < $1.rawValue } == [.carbs])
+        #expect(snapshot[.nightscout].failures[.carbs]?.message == "HTTP 500")
+    }
+}
+
 @Suite("Sync status classification") struct SyncStatusRulesTests {
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
@@ -221,6 +287,6 @@ private final class SyncTestClock: Sendable {
             #expect(kinds.isSubset(of: Set(destination.dataKinds)))
             #expect(!kinds.contains(.deviceStatus))
         }
-        #expect(!SyncBacklogCounter.pendingQueries(for: .tidepool).contains { $0.kind == .adjustments })
+        #expect(!SyncBacklogCounter.pendingQueries(for: .tidepool).contains { $0.kind == .overrides || $0.kind == .tempTargets })
     }
 }

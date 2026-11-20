@@ -29,7 +29,7 @@ enum SyncDestination: String, Codable, CodingKeyRepresentable, CaseIterable, Ide
     /// The kinds of data this destination receives, in display order.
     var dataKinds: [SyncDataKind] {
         switch self {
-        case .nightscout: return [.glucose, .treatments, .carbs, .adjustments, .deviceStatus]
+        case .nightscout: return [.glucose, .treatments, .carbs, .overrides, .tempTargets, .deviceStatus]
         case .appleHealth,
              .tidepool: return [.glucose, .treatments, .carbs]
         }
@@ -42,8 +42,10 @@ enum SyncDataKind: String, Codable, CodingKeyRepresentable, CaseIterable, Identi
     /// Pump history: boluses, temp basals and other pump events.
     case treatments
     case carbs
-    /// Overrides and temp targets.
-    case adjustments
+    /// Overrides and override runs; one Nightscout upload pipeline.
+    case overrides
+    /// Temp targets and temp target runs; one Nightscout upload pipeline.
+    case tempTargets
     case deviceStatus
 
     var id: String { rawValue }
@@ -53,7 +55,8 @@ enum SyncDataKind: String, Codable, CodingKeyRepresentable, CaseIterable, Identi
         case .glucose: return String(localized: "Glucose", comment: "Sync status data kind")
         case .treatments: return String(localized: "Insulin and Pump Events", comment: "Sync status data kind")
         case .carbs: return String(localized: "Carbs", comment: "Sync status data kind")
-        case .adjustments: return String(localized: "Overrides and Temp Targets", comment: "Sync status data kind")
+        case .overrides: return String(localized: "Overrides")
+        case .tempTargets: return String(localized: "Temp Targets")
         case .deviceStatus: return String(localized: "Device Status", comment: "Sync status data kind")
         }
     }
@@ -74,6 +77,98 @@ struct SyncDestinationRecord: Codable, Equatable, Sendable {
 
     var lastSuccessDate: Date? { lastSuccess.values.max() }
     var latestFailure: SyncFailure? { failures.values.max { $0.date < $1.date } }
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case lastSuccess
+        case failures
+    }
+
+    /// Entries for kinds this build doesn't know (written by another version) are dropped rather
+    /// than failing the whole record.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let successes = try container.decodeIfPresent([String: Date].self, forKey: .lastSuccess) ?? [:]
+        lastSuccess = Dictionary(uniqueKeysWithValues: successes.compactMap { key, date in
+            SyncDataKind(rawValue: key).map { ($0, date) }
+        })
+        let storedFailures = try container.decodeIfPresent([String: StoredFailure].self, forKey: .failures) ?? [:]
+        failures = Dictionary(uniqueKeysWithValues: storedFailures.compactMap { key, stored in
+            SyncDataKind(rawValue: key).map { ($0, SyncFailure(kind: $0, message: stored.message, date: stored.date)) }
+        })
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: lastSuccess.map { ($0.key.rawValue, $0.value) }),
+            forKey: .lastSuccess
+        )
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: failures.map { ($0.key.rawValue, $0.value) }),
+            forKey: .failures
+        )
+    }
+
+    /// A failure as stored, decoded without its `kind` so an unknown kind is skipped, not fatal.
+    private struct StoredFailure: Decodable {
+        let message: String
+        let date: Date
+    }
+}
+
+/// The outcome of one upload pass for one kind of data, which may send several batches or
+/// sub-uploads (e.g. carbs and fat/protein equivalents, overrides and override runs).
+///
+/// The pass counts as a success only when something was sent and every part of it was accepted;
+/// a pass that sent nothing records nothing. So a failed batch is not hidden by a later batch, or
+/// an empty sub-upload, that went through.
+struct SyncPassOutcome: Sendable {
+    private(set) var sentSomething = false
+    private(set) var firstFailureMessage: String?
+
+    var isEmpty: Bool { !sentSomething && firstFailureMessage == nil }
+
+    mutating func succeeded() {
+        sentSomething = true
+    }
+
+    mutating func failed(_ error: Error) {
+        failed(message: error.localizedDescription)
+    }
+
+    mutating func failed(message: String) {
+        sentSomething = true
+        if firstFailureMessage == nil {
+            firstFailureMessage = message
+        }
+    }
+
+    mutating func merge(_ other: SyncPassOutcome) {
+        sentSomething = sentSomething || other.sentSomething
+        if firstFailureMessage == nil {
+            firstFailureMessage = other.firstFailureMessage
+        }
+    }
+
+    static var success: SyncPassOutcome {
+        var outcome = SyncPassOutcome()
+        outcome.succeeded()
+        return outcome
+    }
+
+    static func failure(_ error: Error) -> SyncPassOutcome {
+        var outcome = SyncPassOutcome()
+        outcome.failed(error)
+        return outcome
+    }
+
+    static func failure(message: String) -> SyncPassOutcome {
+        var outcome = SyncPassOutcome()
+        outcome.failed(message: message)
+        return outcome
+    }
 }
 
 struct SyncStatusSnapshot: JSON, Equatable, Sendable {
@@ -113,6 +208,16 @@ final class SyncStatusTracker: @unchecked Sendable {
 
     var snapshot: SyncStatusSnapshot {
         state.withLock { $0 }
+    }
+
+    /// Records a whole upload pass of `kind`: a failure if any part failed, a success if
+    /// everything sent was accepted, nothing if nothing was sent.
+    func record(_ outcome: SyncPassOutcome, _ destination: SyncDestination, _ kind: SyncDataKind) {
+        if let message = outcome.firstFailureMessage {
+            recordFailure(destination, kind, message: message)
+        } else if outcome.sentSomething {
+            recordSuccess(destination, kind)
+        }
     }
 
     /// The destination accepted a batch of `kind`. Clears an earlier failure of the same kind.

@@ -1197,9 +1197,6 @@
     "Oldest waiting" : {
       "comment" : "Sync status: label for the age of the oldest record not yet uploaded"
     },
-    "Overrides and Temp Targets" : {
-      "comment" : "Sync status data kind"
-    },
     "Records that could not be uploaded are retried for %lld days (Nightscout) or %lld days (Tidepool and Apple Health). Older records are not uploaded." : {
       "comment" : "Sync status footer; the numbers are the upload retry windows in days"
     },

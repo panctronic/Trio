@@ -200,23 +200,27 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
     func uploadGlucose() async {
         await retryPendingDeletions()
+        // One Sync Status record per pass: a failed part is not hidden by the other part.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .appleHealth, .glucose) }
         do {
             let glucose = try await glucoseStorage.getGlucoseNotYetUploadedToHealth()
-            await uploadGlucose(glucose)
+            outcome.merge(await uploadGlucose(glucose))
 
             let manualGlucose = try await glucoseStorage.getManualGlucoseNotYetUploadedToHealth()
-            await uploadGlucose(manualGlucose)
+            outcome.merge(await uploadGlucose(manualGlucose))
         } catch {
             warning(.healthKit, "Fetching glucose for Apple Health upload failed", error: error)
         }
     }
 
-    func uploadGlucose(_ glucose: [BloodGlucose]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult func uploadGlucose(_ glucose: [BloodGlucose]) async -> SyncPassOutcome {
         guard settingsManager.settings.useAppleHealth,
               let sampleType = AppleHealthConfig.healthBGObject,
               checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType),
               glucose.isNotEmpty
-        else { return }
+        else { return SyncPassOutcome() }
 
         do {
             // Create HealthKit samples from all the passed glucose values
@@ -239,20 +243,20 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
             guard glucoseSamples.isNotEmpty else {
                 debug(.healthKit, "No glucose samples to upload")
-                return
+                return SyncPassOutcome()
             }
 
             // Attempt to save the blood glucose samples to Apple Health
             try await healthKitStore.save(glucoseSamples)
             debug(.healthKit, "Uploaded \(glucoseSamples.count) glucose samples to Apple Health")
-            syncStatusTracker.recordSuccess(.appleHealth, .glucose)
 
             // After successful upload, update the isUploadedToHealth flag in Core Data
             await updateGlucoseAsUploaded(glucose)
+            return .success
 
         } catch {
             warning(.healthKit, "Uploading glucose samples to Apple Health failed", error: error)
-            syncStatusTracker.recordFailure(.appleHealth, .glucose, error: error)
+            return .failure(error)
         }
     }
 
