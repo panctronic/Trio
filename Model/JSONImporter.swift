@@ -77,20 +77,14 @@ class JSONImporter {
         sortKey: String,
         dateKeyPath: KeyPath<T, Date?>
     ) async throws -> Set<Date> {
-        let fetched = try await coreDataStack.fetchEntitiesAsync(
+        try await coreDataStack.fetchAndMap(
             ofType: type,
             onContext: context,
             predicate: predicate,
             key: sortKey,
             ascending: false
-        )
-
-        return try await context.perform {
-            guard let typed = fetched as? [T] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return Set(typed.compactMap { $0[keyPath: dateKeyPath] })
+        ) { typed in
+            Set(typed.compactMap { $0[keyPath: dateKeyPath] })
         }
     }
 

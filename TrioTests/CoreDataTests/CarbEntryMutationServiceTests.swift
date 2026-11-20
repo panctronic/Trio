@@ -52,13 +52,13 @@ import Testing
     }
 
     private func allRows() async throws -> [CarbEntryStored] {
-        let rows = try await coreDataStack.fetchEntitiesAsync(
+        let rows = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: true
-        ) as? [CarbEntryStored]
+        ) as [CarbEntryStored]?
         guard let rows else { throw TestError("Failed to fetch rows") }
         return rows
     }

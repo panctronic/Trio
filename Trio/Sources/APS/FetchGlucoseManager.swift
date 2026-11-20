@@ -446,7 +446,7 @@ extension BaseFetchGlucoseManager {
             datePredicate
         ])
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let objectIDs = try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
             // Predicate must cover at least the full glucose horizon used by downstream algorithm consumers.
@@ -460,11 +460,7 @@ extension BaseFetchGlucoseManager {
             fetchLimit: 350
         )
 
-        guard let glucoseArray = results as? [GlucoseStored] else {
-            throw CoreDataError.fetchError(function: #function, file: #file)
-        }
-
-        return Array(glucoseArray.map(\.objectID).reversed())
+        return Array(objectIDs.reversed())
     }
 
     /// CoreData-friendly AAPS exponential smoothing + storage.

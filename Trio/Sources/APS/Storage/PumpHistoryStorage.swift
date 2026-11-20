@@ -342,19 +342,15 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistory() async throws -> [PumpHistoryEvent] {
         let context = makeContext()
         context.name = "getPumpHistory"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpHistoryLast24h,
             key: "timestamp",
             ascending: false,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
-        )
-
-        return await context.perform {
-            guard let fetchedPumpEvents = results as? [PumpEventStored] else { return [] }
-
-            return fetchedPumpEvents.map { event in
+        ) { fetchedPumpEvents in
+            fetchedPumpEvents.map { event in
                 switch event.type {
                 case PumpEventStored.EventType.bolus.rawValue:
                     return PumpHistoryEvent(
@@ -409,7 +405,7 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToNightscout() async throws -> [NightscoutTreatment] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToNightscout"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToNightscout,
@@ -417,14 +413,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             ascending: true,
             fetchLimit: UploadBacklog.maxRowsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
-        )
-
-        return try await context.perform { [self] in
-            guard let fetchedPumpEvents = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedPumpEvents.map { event in
+        ) { [self] fetchedPumpEvents in
+            fetchedPumpEvents.map { event in
                 switch event.type {
                 case PumpEvent.bolus.rawValue:
                     // eventType determines whether bolus is external, smb or manual (=administered via app by user)
@@ -586,7 +576,7 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToHealth() async throws -> [PumpHistoryEvent] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToHealth"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToHealth,
@@ -594,14 +584,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             ascending: true,
             fetchLimit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
-        )
-
-        return try await context.perform {
-            guard let fetchedPumpEvents = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedPumpEvents.map { event in
+        ) { fetchedPumpEvents in
+            fetchedPumpEvents.map { event in
                 switch event.type {
                 case PumpEvent.bolus.rawValue:
                     return PumpHistoryEvent(
@@ -638,7 +622,7 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
     func getPumpHistoryNotYetUploadedToTidepool() async throws -> [PumpHistoryEvent] {
         let context = makeContext()
         context.name = "getPumpHistoryNotYetUploadedToTidepool"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate.pumpEventsNotYetUploadedToTidepool,
@@ -646,14 +630,8 @@ final class BasePumpHistoryStorage: PumpHistoryStorage, Injectable {
             ascending: true,
             fetchLimit: UploadBacklog.maxPumpEventsPerPass,
             relationshipKeyPathsForPrefetching: ["bolus", "tempBasal"]
-        )
-
-        return try await context.perform {
-            guard let fetchedPumpEvents = results as? [PumpEventStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return fetchedPumpEvents.map { event in
+        ) { fetchedPumpEvents in
+            fetchedPumpEvents.map { event in
                 switch event.type {
                 case PumpEvent.bolus.rawValue:
                     return PumpHistoryEvent(

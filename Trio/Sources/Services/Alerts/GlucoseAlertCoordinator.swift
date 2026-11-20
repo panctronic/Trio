@@ -413,16 +413,15 @@ final class GlucoseAlertCoordinator: Injectable {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "GlucoseAlertCoordinator.fetchLatestReading"
         do {
-            let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+            return try await CoreDataStack.shared.fetchAndMap(
                 ofType: GlucoseStored.self,
                 onContext: context,
                 predicate: predicate,
                 key: "date",
                 ascending: false,
                 fetchLimit: 1
-            )
-            return await context.perform {
-                guard let latest = (results as? [GlucoseStored])?.first else { return nil }
+            ) { results in
+                guard let latest = results.first else { return nil }
                 return Decimal(latest.glucose)
             }
         } catch {

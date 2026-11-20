@@ -59,13 +59,13 @@ import Testing
         try await storage.storeTempTarget(tempTarget: testTarget)
 
         // Then verify stored entries
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: TempTargetStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Test Target"),
             key: "date",
             ascending: false
-        ) as? [TempTargetStored]
+        ) as [TempTargetStored]?
 
         #expect(storedEntries?.isEmpty == false, "Should have stored entries")
         #expect(storedEntries?.count == 1, "Should have exactly one entry")
@@ -92,13 +92,13 @@ import Testing
         try await storage.storeTempTarget(tempTarget: testTarget)
 
         // Get the stored target's ObjectID
-        let storedEntries = try await coreDataStack.fetchEntitiesAsync(
+        let storedEntries = try await coreDataStack.fetchObjects(
             ofType: TempTargetStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Delete Test"),
             key: "date",
             ascending: false
-        ) as? [TempTargetStored]
+        ) as [TempTargetStored]?
 
         guard let objectID = storedEntries?.first?.objectID else {
             throw TestError("Failed to get stored target's ObjectID")
@@ -108,13 +108,13 @@ import Testing
         await storage.deleteTempTargetPreset(objectID)
 
         // Then verify deletion
-        let remainingEntries = try await coreDataStack.fetchEntitiesAsync(
+        let remainingEntries = try await coreDataStack.fetchObjects(
             ofType: TempTargetStored.self,
             onContext: testContext,
             predicate: NSPredicate(format: "name == %@", "Delete Test"),
             key: "date",
             ascending: false
-        ) as? [TempTargetStored]
+        ) as [TempTargetStored]?
 
         #expect(remainingEntries?.isEmpty == true, "Should have no entries after deletion")
     }
@@ -254,13 +254,13 @@ import Testing
         try await storage.storeTempTarget(tempTarget: running)
 
         // Then
-        let matches = try await coreDataStack.fetchEntitiesAsync(
+        let matches = try await coreDataStack.fetchObjects(
             ofType: TempTargetStored.self,
             onContext: testContext,
             predicate: anchoredPredicate,
             key: "date",
             ascending: false
-        ) as? [TempTargetStored]
+        ) as [TempTargetStored]?
 
         let names = matches?.map(\.name)
         #expect(names?.contains("Chart Preset") == false, "Never activated preset should not match the chart predicate")

@@ -8,20 +8,14 @@ extension LiveActivityManager {
     func fetchAndMapGlucose() async throws -> [GlucoseData] {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchAndMapGlucose"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate.predicateForSixHoursAgo,
             key: "date",
             ascending: false
-        )
-
-        return try await context.perform {
-            guard let glucoseResults = results as? [GlucoseStored] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return glucoseResults.map {
+        ) { glucoseResults in
+            glucoseResults.map {
                 GlucoseData(glucose: Int($0.glucose), date: $0.date ?? Date(), direction: $0.directionEnum)
             }
         }
@@ -31,17 +25,7 @@ extension LiveActivityManager {
     func fetchAndMapDetermination() async throws -> DeterminationData? {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchAndMapDetermination"
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
-            ofType: OrefDetermination.self,
-            onContext: context,
-            predicate: NSPredicate.predicateFor30MinAgoForDetermination,
-            key: "deliverAt",
-            ascending: false,
-            fetchLimit: 1,
-            relationshipKeyPathsForPrefetching: ["forecasts", "forecasts.forecastValues"]
-        )
-
-        let tddResults = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let tddValue = try await CoreDataStack.shared.fetchDictionaries(
             ofType: TDDStored.self,
             onContext: context,
             predicate: NSPredicate.predicateFor30MinAgo,
@@ -49,20 +33,22 @@ extension LiveActivityManager {
             ascending: false,
             fetchLimit: 1,
             propertiesToFetch: ["total"]
-        )
+        ) { tddResults in
+            (tddResults.first?["total"] as? NSDecimalNumber)?.decimalValue ?? 0
+        }
 
-        return try await context.perform {
-            guard let determinationResults = results as? [OrefDetermination],
-                  let tddResults = tddResults as? [[String: Any]]
-            else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
+        return try await CoreDataStack.shared.fetchAndMap(
+            ofType: OrefDetermination.self,
+            onContext: context,
+            predicate: NSPredicate.predicateFor30MinAgoForDetermination,
+            key: "deliverAt",
+            ascending: false,
+            fetchLimit: 1,
+            relationshipKeyPathsForPrefetching: ["forecasts", "forecasts.forecastValues"]
+        ) { determinationResults in
             guard let determination = determinationResults.first else {
                 return nil
             }
-
-            let tddValue = (tddResults.first?["total"] as? NSDecimalNumber)?.decimalValue ?? 0
 
             // Compute cone bounds and per-type lines from forecast relationships (cap at 24 values = 2h)
             var allForecastValues = [[Int]]()
@@ -145,12 +131,12 @@ extension LiveActivityManager {
         predicate: NSPredicate,
         key: String,
         propertiesToFetch: [String],
-        map: @escaping ([String: Any]) -> Output
+        map: @escaping @Sendable([String: Any]) -> Output
     ) async throws -> Output? {
         let context = CoreDataStack.shared.newTaskContext()
         context.name = "fetchAndMapLatest"
 
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchDictionaries(
             ofType: type,
             onContext: context,
             predicate: predicate,
@@ -158,14 +144,8 @@ extension LiveActivityManager {
             ascending: false,
             fetchLimit: 1,
             propertiesToFetch: propertiesToFetch
-        )
-
-        return try await context.perform {
-            guard let rows = results as? [[String: Any]] else {
-                throw CoreDataError.fetchError(function: #function, file: #file)
-            }
-
-            return rows.first.map(map)
+        ) { rows in
+            rows.first.map(map)
         }
     }
 }

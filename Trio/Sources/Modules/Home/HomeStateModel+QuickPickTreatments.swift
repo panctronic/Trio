@@ -71,17 +71,14 @@ private func fetchQuickPickSuggestions<T: NSManagedObject>(
     let cutoff = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
     let fetchContext = CoreDataStack.shared.newTaskContext()
     do {
-        let results: Any = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: type,
             onContext: fetchContext,
             predicate: predicate(cutoff),
             key: sortKey,
             ascending: false,
             batchSize: 100
-        )
-
-        return await fetchContext.perform {
-            guard let entities = results as? [T] else { return [] }
+        ) { entities in
             let samples = entities.compactMap(extractSample)
             return topQuickPickSuggestions(from: samples, roundingScale: roundingScale, roundingMode: roundingMode, now: Date())
         }

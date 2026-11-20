@@ -59,24 +59,16 @@ extension Stat.StateModel {
             let calendar = Calendar.current
 
             // Process daily statistics from TDDStored
-            if let fetchedTDDs = tddResults as? [TDDStored] {
-                dailyStats = self.processDailyTDDs(fetchedTDDs, calendar: calendar)
-            }
+            dailyStats = self.processDailyTDDs(tddResults, calendar: calendar)
 
             // Process hourly statistics from BolusStored and TempBasalStored
-            if let fetchedBoluses = bolusResults as? [BolusStored],
-               let fetchedTempBasals = tempBasalResults as? [TempBasalStored],
-               let fetchedSuspendEvents = suspendEvents as? [PumpEventStored],
-               let fetchedResumeEvents = resumeEvents as? [PumpEventStored]
-            {
-                hourlyStats = self.processHourlyInsulinData(
-                    boluses: fetchedBoluses,
-                    tempBasals: fetchedTempBasals,
-                    suspendEvents: fetchedSuspendEvents,
-                    resumeEvents: fetchedResumeEvents,
-                    calendar: calendar
-                )
-            }
+            hourlyStats = self.processHourlyInsulinData(
+                boluses: bolusResults,
+                tempBasals: tempBasalResults,
+                suspendEvents: suspendEvents,
+                resumeEvents: resumeEvents,
+                calendar: calendar
+            )
         }
 
         return (hourlyStats, dailyStats)
@@ -85,13 +77,13 @@ extension Stat.StateModel {
     /// Fetches TDDStored records from CoreData for daily statistics
     /// - Returns: The results of the fetch request containing TDDStored records
     /// - Note: Fetches records from the last 3 months for week, month, and total views
-    private func fetchTDDStoredRecords(on tddTaskContext: NSManagedObjectContext) async throws -> Any {
+    private func fetchTDDStoredRecords(on tddTaskContext: NSManagedObjectContext) async throws -> [TDDStored] {
         // Create a predicate to fetch TDD records from the last 3 months
         let threeMonthsAgo = Date().addingTimeInterval(-3.months.timeInterval)
         let predicate = NSPredicate(format: "date >= %@", threeMonthsAgo as NSDate)
 
         // Fetch TDD records from CoreData
-        return try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchObjects(
             ofType: TDDStored.self,
             onContext: tddTaskContext,
             predicate: predicate,
@@ -105,7 +97,7 @@ extension Stat.StateModel {
     /// - Returns: A tuple containing the results of both fetch requests
     /// - Note: Fetches records from the last 20 days for detailed hourly view
     private func fetchHourlyInsulinRecords(on tddTaskContext: NSManagedObjectContext) async throws
-        -> (bolus: Any, tempBasal: Any, suspendEvents: Any, resumeEvents: Any)
+        -> (bolus: [BolusStored], tempBasal: [TempBasalStored], suspendEvents: [PumpEventStored], resumeEvents: [PumpEventStored])
     {
         // Calculate date range for hourly statistics (last 20 days)
         let now = Date()
@@ -119,7 +111,7 @@ extension Stat.StateModel {
         )
 
         // Fetch bolus records for hourly stats
-        let bolusResults = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let bolusResults = try await CoreDataStack.shared.fetchObjects(
             ofType: BolusStored.self,
             onContext: tddTaskContext,
             predicate: datePredicate,
@@ -129,7 +121,7 @@ extension Stat.StateModel {
         )
 
         // Fetch temp basal records for hourly stats
-        let tempBasalResults = try await CoreDataStack.shared.fetchEntitiesAsync(
+        let tempBasalResults = try await CoreDataStack.shared.fetchObjects(
             ofType: TempBasalStored.self,
             onContext: tddTaskContext,
             predicate: datePredicate,
@@ -151,28 +143,24 @@ extension Stat.StateModel {
             suspendResumeTypes
         )
 
-        // Fetch both suspension and resume events in a single query
-        let suspendResumeResults = try await CoreDataStack.shared.fetchEntitiesAsync(
+        // Fetch both suspension and resume events in a single query and split them
+        // within the context's perform closure to ensure thread safety
+        let (suspendEvents, resumeEvents) = try await CoreDataStack.shared.fetchAndMap(
             ofType: PumpEventStored.self,
             onContext: tddTaskContext,
             predicate: suspendResumePredicate,
             key: "timestamp",
             ascending: true,
             batchSize: 100
-        )
-
-        // Filter the results within the context's perform closure to ensure thread safety
-        let (suspendEvents, resumeEvents) = await tddTaskContext.perform {
+        ) { pumpEvents in
             var suspendEventsArray: [PumpEventStored] = []
             var resumeEventsArray: [PumpEventStored] = []
 
-            if let pumpEvents = suspendResumeResults as? [PumpEventStored] {
-                for event in pumpEvents {
-                    if event.type == PumpEventStored.EventType.pumpSuspend.rawValue {
-                        suspendEventsArray.append(event)
-                    } else if event.type == PumpEventStored.EventType.pumpResume.rawValue {
-                        resumeEventsArray.append(event)
-                    }
+            for event in pumpEvents {
+                if event.type == PumpEventStored.EventType.pumpSuspend.rawValue {
+                    suspendEventsArray.append(event)
+                } else if event.type == PumpEventStored.EventType.pumpResume.rawValue {
+                    resumeEventsArray.append(event)
                 }
             }
 

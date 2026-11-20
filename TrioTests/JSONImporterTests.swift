@@ -35,13 +35,13 @@ class BundleReference {}
         // run the import againt to check our deduplication logic
         try await importer.importGlucoseHistory(url: url, now: now)
 
-        let allReadings = try await coreDataStack.fetchEntitiesAsync(
+        let allReadings = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored] ?? []
+        )
 
         #expect(allReadings.count == 274)
         #expect(allReadings.first?.glucose == 115)
@@ -62,13 +62,13 @@ class BundleReference {}
         let now = Date("2025-04-29T19:32:52.000Z")!
         try await importer.importGlucoseHistory(url: url, now: now)
 
-        let allReadings = try await coreDataStack.fetchEntitiesAsync(
+        let allReadings = try await coreDataStack.fetchObjects(
             ofType: GlucoseStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: false
-        ) as? [GlucoseStored] ?? []
+        )
 
         #expect(allReadings.isEmpty)
     }
@@ -83,13 +83,13 @@ class BundleReference {}
         // test out deduplication logic
         try await importer.importPumpHistory(url: url, now: now)
 
-        let allReadings = try await coreDataStack.fetchEntitiesAsync(
+        let allReadings = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "timestamp",
             ascending: false
-        ) as? [PumpEventStored] ?? []
+        )
 
         let objectIds = allReadings.map(\.objectID)
         let parsedHistory = OpenAPS.nativePumpHistory(objectIds, orphanedResumes: [], from: context)
@@ -144,13 +144,13 @@ class BundleReference {}
         let now = Date("2025-04-30T01:33:58.000Z")!
         try await importer.importPumpHistory(url: url, now: now)
 
-        let allReadings = try await coreDataStack.fetchEntitiesAsync(
+        let allReadings = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "timestamp",
             ascending: false
-        ) as? [PumpEventStored] ?? []
+        )
 
         #expect(allReadings.isEmpty)
     }
@@ -163,13 +163,13 @@ class BundleReference {}
         let now = Date("2025-05-04T04:37:44.654Z")!
         try await importer.importPumpHistory(url: url, now: now)
 
-        let allReadings = try await coreDataStack.fetchEntitiesAsync(
+        let allReadings = try await coreDataStack.fetchObjects(
             ofType: PumpEventStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "timestamp",
             ascending: false
-        ) as? [PumpEventStored] ?? []
+        )
 
         let objectIds = allReadings.map(\.objectID)
         let parsedHistory = OpenAPS.nativePumpHistory(objectIds, orphanedResumes: [], from: context)
@@ -193,13 +193,13 @@ class BundleReference {}
         // run the import againt to check our deduplication logic
         try await importer.importCarbHistory(url: url, now: now)
 
-        let allCarbEntries = try await coreDataStack.fetchEntitiesAsync(
+        let allCarbEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: false
-        ) as? [CarbEntryStored] ?? []
+        )
 
         #expect(allCarbEntries.count == 8)
         #expect(allCarbEntries.first?.carbs == 10)
@@ -218,13 +218,13 @@ class BundleReference {}
         let now = Date("2025-04-29T19:32:52.000Z")!
         try await importer.importCarbHistory(url: url, now: now)
 
-        let allCarbEntries = try await coreDataStack.fetchEntitiesAsync(
+        let allCarbEntries = try await coreDataStack.fetchObjects(
             ofType: CarbEntryStored.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "date",
             ascending: false
-        ) as? [CarbEntryStored] ?? []
+        )
 
         #expect(allCarbEntries.isEmpty)
     }
@@ -241,13 +241,13 @@ class BundleReference {}
         // run the import againt to check our deduplication logic
         try await importer.importOrefDetermination(enactedUrl: enactedUrl, suggestedUrl: suggestedUrl, now: now)
 
-        let determinations = try await coreDataStack.fetchEntitiesAsync(
+        let determinations = try await coreDataStack.fetchObjects(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "deliverAt",
             ascending: false
-        ) as? [OrefDetermination] ?? []
+        )
 
         #expect(determinations.count == 1) // single determination, as enacted.deliverAt and suggested.deliverAt match
 
@@ -274,7 +274,7 @@ class BundleReference {}
         #expect(determination.threshold == Decimal(string: "3.7").map(NSDecimalNumber.init))
         #expect(determination.carbRatio == nil) // not present in JSON
 
-        let forecasts = try await coreDataStack.fetchEntitiesAsync(
+        let forecasts = try await coreDataStack.fetchObjects(
             ofType: Forecast.self,
             onContext: context,
             predicate: NSPredicate(format: "orefDetermination = %@", determination.objectID),
@@ -286,7 +286,7 @@ class BundleReference {}
         var forecastHierarchy: [(forecastID: NSManagedObjectID, forecastValueIDs: [NSManagedObjectID])] = []
 
         await context.perform {
-            if let forecasts = forecasts as? [Forecast] {
+            do {
                 for forecast in forecasts {
                     // Use the helper property that already sorts by index
                     let sortedValues = forecast.forecastValuesArray
@@ -358,13 +358,13 @@ class BundleReference {}
 
         try await importer.importOrefDetermination(enactedUrl: enactedUrl, suggestedUrl: suggestedUrl, now: now)
 
-        let determinations = try await coreDataStack.fetchEntitiesAsync(
+        let determinations = try await coreDataStack.fetchObjects(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "deliverAt",
             ascending: false
-        ) as? [OrefDetermination] ?? []
+        )
 
         #expect(determinations.isEmpty)
     }
@@ -380,13 +380,13 @@ class BundleReference {}
         let now = Date("2025-04-28T20:50:00.000Z")!
         try await importer.importOrefDetermination(enactedUrl: enactedUrl, suggestedUrl: suggestedUrl, now: now)
 
-        let determinations = try await coreDataStack.fetchEntitiesAsync(
+        let determinations = try await coreDataStack.fetchObjects(
             ofType: OrefDetermination.self,
             onContext: context,
             predicate: NSPredicate(format: "TRUEPREDICATE"),
             key: "deliverAt",
             ascending: false
-        ) as? [OrefDetermination] ?? []
+        )
 
         #expect(determinations.count == 2) // two determinations, suggested is more recent than enacted
 
