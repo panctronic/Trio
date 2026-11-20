@@ -23,8 +23,8 @@ struct BolusInputView: View {
     )
 
     var body: some View {
-        let bolusIncrement = Double(truncating: state.bolusIncrement as NSNumber)
-        let adjustedBolusAmount = floor(bolusAmount / bolusIncrement) * bolusIncrement
+        // What is shown is what is sent: the amount rounded down to the pump's bolus increment
+        let adjustedBolusAmount = WatchState.bolusRoundedDown(bolusAmount, toIncrement: state.bolusIncrement)
 
         // In the "Meal & Bolus" flow the user can dial insulin down to zero (or the
         // recommendation itself is zero). In that case there is nothing to bolus, so

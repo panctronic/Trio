@@ -4,6 +4,21 @@ import WatchConnectivity
 // MARK: - Send Data to Phone
 
 extension WatchState {
+    /// Rounds a bolus down to a multiple of `increment`, the step the pump can deliver, so the amount shown for
+    /// confirmation is the amount sent. Computed in `Decimal` so e.g. 2.35 U in 0.05 U steps stays 2.35 U.
+    static func bolusRoundedDown(_ amount: Double, toIncrement increment: Decimal) -> Double {
+        guard amount > 0 else { return 0 }
+        guard increment > 0 else { return amount }
+
+        // Drop binary noise from the Double before flooring to whole steps
+        var steps = Decimal(amount) / increment
+        var cleaned = Decimal()
+        NSDecimalRound(&cleaned, &steps, 6, .plain)
+        var wholeSteps = Decimal()
+        NSDecimalRound(&wholeSteps, &cleaned, 0, .down)
+        return NSDecimalNumber(decimal: wholeSteps * increment).doubleValue
+    }
+
     /// Sends the entry confirmed with the crown: its carbs, if any, then the bolus.
     /// Refuses an entry older than `entryLifetime` and clears it instead.
     func sendConfirmedEntry(bolusAmount amount: Double, at now: Date = Date()) {
