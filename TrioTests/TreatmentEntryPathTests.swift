@@ -91,4 +91,64 @@ import Testing
         #expect(failed.contains("Pump suspended"))
         #expect(Treatments.StateModel.mealSavedBolusFailedMessage(for: nil) != failed)
     }
+
+    // MARK: - History deletion
+
+    private func makeBolus(
+        in context: NSManagedObjectContext,
+        minutesAgo: Double,
+        isSMB: Bool = false,
+        isExternal: Bool = false
+    ) -> PumpEventStored {
+        let event = PumpEventStored(context: context)
+        event.id = UUID().uuidString
+        event.timestamp = now.addingTimeInterval(-minutesAgo * 60)
+        event.type = PumpEventStored.EventType.bolus.rawValue
+        let bolus = BolusStored(context: context)
+        bolus.amount = 2
+        bolus.isSMB = isSMB
+        bolus.isExternal = isExternal
+        bolus.pumpEvent = event
+        return event
+    }
+
+    @Test("Deleting active insulin warns, by type") func testHistoryInsulinWarnings() async throws {
+        let stack = try await CoreDataStack.createForTests()
+        let context = stack.newTaskContext()
+        let activeDuration: TimeInterval = 10 * 60 * 60
+
+        await context.perform {
+            func message(_ event: PumpEventStored) -> String {
+                History.DeletionTarget.insulin(event)
+                    .message(units: .mgdL, insulinActiveDuration: activeDuration, now: self.now) ?? ""
+            }
+            let base = message(self.makeBolus(in: context, minutesAgo: 11 * 60))
+            let pump = message(self.makeBolus(in: context, minutesAgo: 30))
+            let smb = message(self.makeBolus(in: context, minutesAgo: 30, isSMB: true))
+            let external = message(self.makeBolus(in: context, minutesAgo: 30, isExternal: true))
+
+            #expect(!base.contains("IOB"), "Insulin past its duration of action needs no warning")
+            #expect(pump.contains("IOB"))
+            #expect(smb.contains("IOB"))
+            #expect(external.contains("IOB"))
+            #expect(Set([pump, smb, external].map { $0.components(separatedBy: "\n\n").last ?? "" }).count == 3)
+        }
+    }
+
+    @Test("Deleting carbs still absorbing warns about COB") func testHistoryCarbsWarning() async throws {
+        let stack = try await CoreDataStack.createForTests()
+        let context = stack.newTaskContext()
+
+        await context.perform {
+            func message(hoursAgo: Double) -> String {
+                let entry = CarbEntryStored(context: context)
+                entry.date = self.now.addingTimeInterval(-hoursAgo * 60 * 60)
+                entry.carbs = 30
+                return History.DeletionTarget.carbs(entry)
+                    .message(units: .mgdL, insulinActiveDuration: 0, now: self.now) ?? ""
+            }
+            #expect(message(hoursAgo: 1).contains("COB"))
+            #expect(!message(hoursAgo: 7).contains("COB"))
+        }
+    }
 }

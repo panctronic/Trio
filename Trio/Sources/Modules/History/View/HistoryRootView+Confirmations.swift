@@ -11,7 +11,7 @@ extension History.RootView {
         content
             .glassActionSheet(
                 Text(target?.title(units: state.units) ?? ""),
-                message: target?.message(units: state.units).map { Text($0) },
+                message: target?.message(units: state.units, insulinActiveDuration: state.insulinActiveDuration).map { Text($0) },
                 isPresented: Binding(
                     get: { deletionTarget != nil },
                     set: { if !$0 { deletionTarget = nil } }

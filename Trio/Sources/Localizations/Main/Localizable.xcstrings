@@ -1140,6 +1140,18 @@
     "The pump did not confirm the bolus of %@ U, it may have been delivered. Check pump history before repeating. %@" : {
       "comment" : "Shortcut result when it is not known whether the bolus was delivered; the second argument is the reason"
     },
+    "These carbs still count towards COB. Deleting them lowers COB, so Trio will dose less insulin for them." : {
+      "comment" : "Warning when deleting carbs that are still being absorbed"
+    },
+    "This bolus was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
+      "comment" : "Warning when deleting a pump bolus that is still active"
+    },
+    "This insulin is still active. Deleting it lowers IOB, so Trio may dose more insulin. Only delete it if it was not actually taken." : {
+      "comment" : "Warning when deleting external insulin that is still active"
+    },
+    "This SMB was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
+      "comment" : "Warning when deleting an SMB that is still active"
+    },
     " " : {
       "localizations" : {
         "bg" : {
