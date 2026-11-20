@@ -730,8 +730,8 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
                 // activation holding it (up to the pump timeout) must not hold up dosing. The next loop tries again.
                 guard hasScheduledSwitchWork() else { return }
                 guard let result = try await serializer.runIfIdle({
-                    try? await self.reconcilePumpScheduleStep()
-                    return try await self.runDueScheduledSwitchStep()
+                    try? await self.reconcilePumpScheduleStep(timeout: Self.inLoopPumpSyncTimeout)
+                    return try await self.runDueScheduledSwitchStep(timeout: Self.inLoopPumpSyncTimeout)
                 }) else {
                     debug(.settings, "Scheduled profile switch skipped this loop, another profile change is running")
                     return
@@ -774,7 +774,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         return state.scheduledSwitches.newestOccurrence(after: settledAt, upTo: now(), calendar: calendar) != nil
     }
 
-    private func runDueScheduledSwitchStep() async throws -> ScheduledSwitchRun {
+    private func runDueScheduledSwitchStep(timeout: TimeInterval? = nil) async throws -> ScheduledSwitchRun {
         var state = try await loadState()
         let now = self.now()
         guard !state.scheduledSwitches.isEmpty else { return .idle }
@@ -807,7 +807,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
 
         let previousLive = liveProfile(named: state.activeProfileName)
         do {
-            try await syncPump(target)
+            try await syncPump(target, timeout: timeout)
         } catch {
             return .retrying(due, reason: error.localizedDescription)
         }
@@ -944,13 +944,13 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         }
     }
 
-    private func syncPump(_ profile: TrioTherapyProfile) async throws {
+    private func syncPump(_ profile: TrioTherapyProfile, timeout: TimeInterval? = nil) async throws {
         guard !isPumpSuspended else {
             warning(.settings, "Basal schedule of profile \(profile.fingerprint(units: .mgdL)) not sent, the pump is suspended")
             throw TherapyProfileError.pumpSuspended
         }
         do {
-            try await syncBasalSchedule(profile.basalProfileEntries)
+            try await syncBasalSchedule(profile.basalProfileEntries, timeout: timeout)
         } catch let error as TherapyProfileError {
             throw error
         } catch {
@@ -963,10 +963,15 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     /// would otherwise hold every profile change, and the loop that runs a scheduled switch, forever.
     static let pumpSyncTimeout: TimeInterval = 45
 
-    /// Writes a basal schedule to the pump, giving up after `pumpSyncTimeout`. A write given up on keeps running and
-    /// may still land, so the pump could end up holding a schedule Trio does not use: the schedule then counts as
-    /// unconfirmed, and once that write finishes either way the active profile's schedule is sent again.
-    private func syncBasalSchedule(_ entries: [BasalProfileEntry]) async throws {
+    /// Shorter timeout for in-loop scheduled switches so a single slow pump write cannot exhaust
+    /// iOS's ~30 s background execution budget before `determineBasal()` runs.
+    static let inLoopPumpSyncTimeout: TimeInterval = 18
+
+    /// Writes a basal schedule to the pump, giving up after `pumpSyncTimeout` (or `timeout` when provided).
+    /// A write given up on keeps running and may still land, so the pump could end up holding a schedule Trio
+    /// does not use: the schedule then counts as unconfirmed, and once that write finishes either way the active
+    /// profile's schedule is sent again.
+    private func syncBasalSchedule(_ entries: [BasalProfileEntry], timeout: TimeInterval? = nil) async throws {
         let write = Task { [self] in
             if let syncBasalScheduleOverride {
                 return try await syncBasalScheduleOverride(entries)
@@ -974,7 +979,8 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
             try await syncPumpBasalSchedule(entries)
         }
         do {
-            try await withTimeout(seconds: pumpSyncTimeoutOverride?() ?? Self.pumpSyncTimeout) { try await write.value }
+            let effectiveTimeout = pumpSyncTimeoutOverride?() ?? timeout ?? Self.pumpSyncTimeout
+            try await withTimeout(seconds: effectiveTimeout) { try await write.value }
         } catch is AsyncTimeoutError {
             warning(.settings, "Pump did not answer a basal schedule write in time, it may still apply it")
             pumpScheduleLock.withLock {
@@ -1010,7 +1016,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     /// Within a serialized operation. Leaves the flag set when the pump is suspended or the write fails, so a later run
     /// tries again. Waits while an abandoned write is still running: it reconciles itself when it finishes, and a
     /// new write to a pump that does not answer would only hold the caller up for another timeout.
-    private func reconcilePumpScheduleStep() async throws {
+    private func reconcilePumpScheduleStep(timeout: TimeInterval? = nil) async throws {
         let (unconfirmed, abandoned) = pumpScheduleLock.withLock { (unconfirmedPumpSchedule, abandonedPumpWrites) }
         guard unconfirmed, abandoned == 0, !isPumpSuspended else { return }
         let state = try await loadState()
@@ -1018,7 +1024,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         // Cleared first: a write that times out again sets it again.
         pumpScheduleUnconfirmed = false
         do {
-            try await syncBasalSchedule(live.basalProfileEntries)
+            try await syncBasalSchedule(live.basalProfileEntries, timeout: timeout)
             info(.settings, "Basal schedule of profile \(live.fingerprint(units: .mgdL)) sent again to the pump")
         } catch {
             pumpScheduleUnconfirmed = true
