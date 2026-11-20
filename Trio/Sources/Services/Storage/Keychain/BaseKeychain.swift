@@ -18,18 +18,17 @@ private let SecValueData = kSecValueData as String
 
 /// KeychainWrapper is a class to help make Keychain access in Swift more straightforward. It is designed to make accessing the Keychain services more like using NSUserDefaults, which is much more familiar to people.
 final class BaseKeychain: Keychain {
-    /// Items hold credentials (Nightscout URL and API secret, the remote control secret, App Attest key IDs), so they
-    /// stay on this device: not synced through iCloud Keychain and not restored onto another device from a backup.
-    /// "After first unlock" keeps them readable in the background (CGM and push wake-ups) as before; only the
-    /// "this device only" part is new. Earlier versions stored synced, migratable items; see `migrateLegacyItems()`.
+    /// Items hold credentials (Nightscout URL and API secret, the remote control secret, App Attest key IDs), so new
+    /// writes stay on this device: not synced through iCloud Keychain and not restored onto another device from a
+    /// backup. "After first unlock" keeps them readable in the background (CGM and push wake-ups) as before.
+    ///
+    /// Earlier versions wrote iCloud-synced items with plain "after first unlock". Those are left in place: reads
+    /// find either kind (see `getData(forKey:)`), and nothing deletes a synced copy except an explicit removal, so
+    /// other devices and older builds sharing it keep working.
     enum Config {
         static let defaultAccessibilityLevel = KeychainItemAccessibility.afterFirstUnlockThisDeviceOnly
         static let defaultSynchronizable = false
     }
-
-    /// Services whose legacy items were already migrated in this process.
-    private static var migratedServices = Set<String>()
-    private static let migrationLock = NSLock()
 
     fileprivate enum KeychainSynchronizable {
         case any
@@ -68,95 +67,6 @@ final class BaseKeychain: Keychain {
         defaultSynchronizable = synchronizable
         defaultAccessibilityLevel = accessibilityLevel
         self.accessGroup = accessGroup
-
-        // Reads only see items with this keychain's attributes, so move older items over before anything reads
-        if !synchronizable, accessibilityLevel == Config.defaultAccessibilityLevel {
-            migrateLegacyItemsOncePerProcess()
-        }
-    }
-
-    // MARK: - Migration
-
-    private func migrateLegacyItemsOncePerProcess() {
-        let key = serviceName + "|" + (accessGroup ?? "")
-        Self.migrationLock.lock()
-        defer { Self.migrationLock.unlock() }
-        guard !Self.migratedServices.contains(key) else { return }
-        if migrateLegacyItems() {
-            Self.migratedServices.insert(key)
-        }
-    }
-
-    /// Moves items written by earlier versions (iCloud-synced, or accessibility without "this device only") to
-    /// this keychain's attributes. A synced item is copied to a local item first and only deleted once the copy
-    /// exists; a local item that already exists for the key wins over the synced one. Idempotent.
-    ///
-    /// Returns false when the keychain could not be read (for example before the first unlock after a restart), so
-    /// the caller tries again later; nothing is deleted in that case.
-    @discardableResult func migrateLegacyItems() -> Bool {
-        var query: [String: Any] = [
-            SecClass: kSecClassGenericPassword,
-            SecAttrService: serviceName,
-            SecAttrSynchronizable: kSecAttrSynchronizableAny,
-            SecMatchLimit: kSecMatchLimitAll,
-            SecReturnAttributes: kCFBooleanTrue as Any,
-            SecReturnData: kCFBooleanTrue as Any
-        ]
-        if let accessGroup { query[SecAttrAccessGroup] = accessGroup }
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return true }
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
-
-        let wanted = defaultAccessibilityLevel.keychainAttrValue as String
-        var succeeded = true
-        // Local items first, so a synced item never overwrites a local one
-        let ordered = items.sorted { !Self.isSynchronized($0) && Self.isSynchronized($1) }
-        for item in ordered {
-            guard let account = item[SecAttrAccount] as? Data else { continue }
-            let accessible = item[SecAttrAccessible] as? String
-
-            if !Self.isSynchronized(item) {
-                guard accessible != wanted else { continue }
-                var match = itemQuery(account: account)
-                match[SecAttrSynchronizable] = kCFBooleanFalse
-                let update = SecItemUpdate(match as CFDictionary, [SecAttrAccessible: wanted] as CFDictionary)
-                if update != errSecSuccess { succeeded = false }
-                continue
-            }
-
-            guard let data = item[SecValueData] as? Data else { continue }
-            var add = itemQuery(account: account)
-            add[SecAttrSynchronizable] = kCFBooleanFalse
-            add[SecAttrAccessible] = wanted
-            add[SecAttrGeneric] = account
-            add[SecValueData] = data
-            let added = SecItemAdd(add as CFDictionary, nil)
-            guard added == errSecSuccess || added == errSecDuplicateItem else {
-                succeeded = false
-                continue
-            }
-            var synced = itemQuery(account: account)
-            synced[SecAttrSynchronizable] = kCFBooleanTrue
-            let deleted = SecItemDelete(synced as CFDictionary)
-            if deleted != errSecSuccess, deleted != errSecItemNotFound { succeeded = false }
-        }
-        return succeeded
-    }
-
-    private func itemQuery(account: Data) -> [String: Any] {
-        var query: [String: Any] = [
-            SecClass: kSecClassGenericPassword,
-            SecAttrService: serviceName,
-            SecAttrAccount: account
-        ]
-        if let accessGroup { query[SecAttrAccessGroup] = accessGroup }
-        return query
-    }
-
-    private static func isSynchronized(_ item: [String: Any]) -> Bool {
-        (item[SecAttrSynchronizable] as? Bool) ?? ((item[SecAttrSynchronizable] as? NSNumber)?.boolValue ?? false)
     }
 
     // MARK: - Public Methods
@@ -203,67 +113,65 @@ final class BaseKeychain: Keychain {
     }
 
     func accessibilityOfKey(_ key: String) -> Result<KeychainItemAccessibility, KeychainError> {
-        var keychainQueryDictionary = setupKeychainQueryDictionary(
-            forKey: key,
-            synchronizable: defaultSynchronizable.keychainFlag,
-            withAccessibility: defaultAccessibilityLevel
-        )
-        var result: AnyObject?
-
-        // Remove accessibility attribute
-        keychainQueryDictionary.removeValue(forKey: SecAttrAccessible)
-
-        // Limit search results to one
-        keychainQueryDictionary[SecMatchLimit] = kSecMatchLimitOne
-
-        // Specify we want SecAttrAccessible returned
-        keychainQueryDictionary[SecReturnAttributes] = kCFBooleanTrue
-
-        // Search
-        let status = withUnsafeMutablePointer(to: &result) {
-            SecItemCopyMatching(keychainQueryDictionary as CFDictionary, UnsafeMutablePointer($0))
-        }
-
-        if status == errSecSuccess {
-            if let resultsDictionary = result as? [String: AnyObject],
-               let accessibilityAttrValue = resultsDictionary[SecAttrAccessible] as? String,
-               let mappedValue = KeychainItemAccessibility.accessibilityForAttributeValue(accessibilityAttrValue as CFString)
+        switch preferredItem(forKey: key) {
+        case let .success(item?):
+            if let value = item[SecAttrAccessible] as? String,
+               let mapped = KeychainItemAccessibility.accessibilityForAttributeValue(value as CFString)
             {
-                return .success(mappedValue)
+                return .success(mapped)
             }
+            return .failure(.darwinError(errSecDecode))
+        case .success(nil):
+            return .failure(.darwinError(errSecItemNotFound))
+        case let .failure(error):
+            return .failure(error)
         }
-
-        return .failure(.darwinError(status))
     }
 
     // MARK: Public Getters
 
+    /// Finds the value whatever attributes it was written with: a device-only item from this version, or an
+    /// iCloud-synced one from an earlier version (or from another device or an older build sharing it). When both
+    /// exist, the more recently modified wins, and the local one when that can't be told.
     func getData(forKey key: String) -> Result<Data?, KeychainError> {
-        var keychainQueryDictionary = setupKeychainQueryDictionary(
-            forKey: key,
-            synchronizable: defaultSynchronizable.keychainFlag,
-            withAccessibility: defaultAccessibilityLevel
-        )
+        preferredItem(forKey: key).map { $0?[SecValueData] as? Data }
+    }
+
+    private func preferredItem(forKey key: String) -> Result<[String: Any]?, KeychainError> {
+        var query = baseQuery(forKey: key)
+        query[SecAttrSynchronizable] = kSecAttrSynchronizableAny
+        query[SecMatchLimit] = kSecMatchLimitAll
+        query[SecReturnAttributes] = kCFBooleanTrue
+        query[SecReturnData] = kCFBooleanTrue
+
         var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return .success(nil) }
+        guard status == errSecSuccess else { return .failure(.darwinError(status)) }
+        let items = (result as? [[String: Any]]) ?? (result as? [String: Any]).map { [$0] } ?? []
+        return .success(Self.preferred(items))
+    }
 
-        // Limit search results to one
-        keychainQueryDictionary[SecMatchLimit] = kSecMatchLimitOne
-
-        // Specify we want Data/CFData returned
-        keychainQueryDictionary[SecReturnData] = kCFBooleanTrue
-
-        // Search
-        let status = withUnsafeMutablePointer(to: &result) {
-            SecItemCopyMatching(keychainQueryDictionary as CFDictionary, UnsafeMutablePointer($0))
+    /// The item to read when several match: most recently modified first, then the non-synced one.
+    static func preferred(_ items: [[String: Any]]) -> [String: Any]? {
+        items.max { lhs, rhs in
+            let lhsDate = lhs[kSecAttrModificationDate as String] as? Date ?? .distantPast
+            let rhsDate = rhs[kSecAttrModificationDate as String] as? Date ?? .distantPast
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
+            // equal or unknown: the local one ranks higher
+            return isSynchronized(lhs) == false ? false : !isSynchronized(rhs)
         }
+    }
 
-        if status == errSecSuccess {
-            return .success(result as? Data)
-        } else if status == errSecItemNotFound {
-            return .success(nil)
-        }
+    static func isSynchronized(_ item: [String: Any]) -> Bool {
+        (item[SecAttrSynchronizable] as? NSNumber)?.boolValue ?? false
+    }
 
-        return .failure(.darwinError(status))
+    private func baseQuery(forKey key: String) -> [String: Any] {
+        var query: [String: Any] = [SecClass: kSecClassGenericPassword, SecAttrService: serviceName]
+        if let accessGroup { query[SecAttrAccessGroup] = accessGroup }
+        query[SecAttrAccount] = key.data(using: .utf8)
+        return query
     }
 
     func getValue<T: Decodable>(_: T.Type, forKey key: String) -> Result<T?, KeychainError> {
@@ -325,11 +233,12 @@ final class BaseKeychain: Keychain {
         forKey key: String,
         withAccessibility accessibility: KeychainItemAccessibility? = nil
     ) -> Result<Void, KeychainError> {
-        let keychainQueryDictionary: [String: Any] = setupKeychainQueryDictionary(
-            forKey: key,
-            synchronizable: .any,
-            withAccessibility: accessibility ?? defaultAccessibilityLevel
-        )
+        // An explicit removal (the user clearing a setting, or a value being replaced by nil) deletes every copy,
+        // the local one and any iCloud-synced one from earlier versions, whatever its accessibility. Nothing else
+        // deletes synced copies. `accessibility` no longer narrows the match.
+        _ = accessibility
+        var keychainQueryDictionary = baseQuery(forKey: key)
+        keychainQueryDictionary[SecAttrSynchronizable] = kSecAttrSynchronizableAny
 
         // Delete
         let status = SecItemDelete(keychainQueryDictionary as CFDictionary)
@@ -398,14 +307,14 @@ final class BaseKeychain: Keychain {
 
     /// Update existing data associated with a specified key name. The existing data will be overwritten by the new data
     private func update(_ value: Data, forKey key: String) -> Result<Void, KeychainError> {
-        var keychainQueryDictionary: [String: Any] = setupKeychainQueryDictionary(
-            forKey: key,
-            synchronizable: defaultSynchronizable.keychainFlag,
-            withAccessibility: defaultAccessibilityLevel
-        )
-        let updateDictionary = [SecValueData: value]
-
-        keychainQueryDictionary[SecAttrAccessible] = defaultAccessibilityLevel.keychainAttrValue
+        // Matches the existing item of this keychain's kind (local, for the defaults) whatever accessibility an
+        // earlier version gave it, and moves it to the current accessibility along with the new value.
+        var keychainQueryDictionary = baseQuery(forKey: key)
+        keychainQueryDictionary[SecAttrSynchronizable] = defaultSynchronizable ? kCFBooleanTrue : kCFBooleanFalse
+        let updateDictionary: [String: Any] = [
+            SecValueData: value,
+            SecAttrAccessible: defaultAccessibilityLevel.keychainAttrValue
+        ]
 
         // Update
         let status = SecItemUpdate(keychainQueryDictionary as CFDictionary, updateDictionary as CFDictionary)
