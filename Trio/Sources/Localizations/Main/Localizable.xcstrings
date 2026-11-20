@@ -1146,11 +1146,20 @@
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
     },
+    "The carbs could not be saved, so no insulin was given or logged. Please try again." : {
+      "comment" : "Alert when saving the meal failed on the treatments screen"
+    },
+    "The outcome of the bolus is not known. Check pump history before repeating the bolus." : {
+      "comment" : "Alert when no outcome was reported for the bolus from the treatments screen"
+    },
     "The outcome of the bolus of %@ U is not known. Check pump history before repeating." : {
       "comment" : "Shortcut result when no outcome was reported for the bolus"
     },
     "The pump did not confirm the bolus of %@ U, it may have been delivered. Check pump history before repeating. %@" : {
       "comment" : "Shortcut result when it is not known whether the bolus was delivered; the second argument is the reason"
+    },
+    "The pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
+      "comment" : "Alert when it is not known whether the bolus from the treatments screen was delivered; the argument is the pump's reason"
     },
     "These carbs still count towards COB. Deleting them lowers COB, so Trio will dose less insulin for them." : {
       "comment" : "Warning when deleting carbs that are still being absorbed"

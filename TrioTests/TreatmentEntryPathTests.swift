@@ -136,6 +136,12 @@ import Testing
         #expect(Treatments.StateModel.mealSavedBolusFailedMessage(for: nil) != failed)
     }
 
+    @Test("A failed bolus without a meal shows the pump's reason") func testBolusFailedMessage() {
+        let failed = Treatments.StateModel.bolusFailedMessage(for: .failed(message: "Rounds to 0 U", error: nil))
+        #expect(failed.contains("Rounds to 0 U"))
+        #expect(!Treatments.StateModel.bolusFailedMessage(for: nil).isEmpty)
+    }
+
     // MARK: - History deletion
 
     private func makeBolus(

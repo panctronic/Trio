@@ -48,8 +48,9 @@ extension Treatments {
         var carbRatio: Decimal = 0
 
         var addButtonPressed: Bool = false
-        /// Set while a bolus entered with a saved meal is enacted: if it fails, the screen stays open to say so.
-        var keepsScreenOnBolusFailure: Bool = false
+        /// Set while the pump bolus is enacted. Determinations and failure broadcasts arriving meanwhile must not close
+        /// the screen: the submission itself reports the outcome.
+        var isEnactingBolus: Bool = false
 
         var target: Decimal = 0
         var cob: Int16 = 0
@@ -524,6 +525,14 @@ extension Treatments {
             var isMealSaved = false
             if isMealPresent {
                 isMealSaved = await saveMeal()
+                // The bolus was worked out for this meal: no insulin for carbs that were not saved
+                guard isMealSaved else {
+                    await showSubmissionFailure(String(
+                        localized: "The carbs could not be saved, so no insulin was given or logged. Please try again.",
+                        comment: "Alert when saving the meal failed on the treatments screen"
+                    ))
+                    return
+                }
             }
 
             guard isInsulinGiven else {
@@ -550,6 +559,23 @@ extension Treatments {
                     determinationFailureMessage = "Glucose data is stale"
                 }
                 return hideModal()
+            }
+
+            // The determination that would close the screen may have arrived while the bolus was being enacted
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = false
+            }
+            hideModal()
+        }
+
+        /// Shows why the submission did not complete. The alert's OK closes the screen; until then it stays open,
+        /// and the add button stays disabled so the same entry cannot be submitted twice.
+        private func showSubmissionFailure(_ message: String) async {
+            await MainActor.run {
+                self.isAwaitingDeterminationResult = false
+                self.determinationFailureMessage = message
+                self.showDeterminationFailureAlert = true
+                self.isEnactingBolus = false
             }
         }
 
@@ -679,8 +705,7 @@ extension Treatments {
             // show loading animation
             await MainActor.run {
                 self.isAwaitingDeterminationResult = true
-                // Keep the screen open on failure so the user learns the carbs were saved without the bolus
-                self.keepsScreenOnBolusFailure = isMealSaved
+                self.isEnactingBolus = true
             }
             info(.bolus, "Bolus of \(maxAmount) U requested")
             var bolusResult: BolusEnactmentResult?
@@ -689,17 +714,19 @@ extension Treatments {
             }
 
             if let bolusResult, bolusResult.isSuccess {
+                await MainActor.run {
+                    self.isEnactingBolus = false
+                }
                 return true
             }
 
+            // Every failure is reported here, including those APSManager does not broadcast (e.g. a bolus that
+            // rounds to 0 U), so the spinner and the disabled button never stay stuck
+            warning(.bolus, "Bolus not enacted: \(bolusResult?.message ?? "no result")")
+            await showSubmissionFailure(
+                isMealSaved ? Self.mealSavedBolusFailedMessage(for: bolusResult) : Self.bolusFailedMessage(for: bolusResult)
+            )
             if isMealSaved {
-                let message = Self.mealSavedBolusFailedMessage(for: bolusResult)
-                warning(.bolus, "Bolus with meal not enacted: \(bolusResult?.message ?? "no result")")
-                await MainActor.run {
-                    self.isAwaitingDeterminationResult = false
-                    self.determinationFailureMessage = message
-                    self.showDeterminationFailureAlert = true
-                }
                 // A successful bolus runs a determination; without one, COB would wait for the next loop
                 do {
                     try await apsManager.determineBasalSync()
@@ -708,6 +735,25 @@ extension Treatments {
                 }
             }
             return false
+        }
+
+        /// Tells the user a bolus entered without a meal was not (or may not have been) delivered.
+        static func bolusFailedMessage(for result: BolusEnactmentResult?) -> String {
+            switch result {
+            case let .uncertainDelivery(message, _):
+                return String(
+                    localized: "The pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. \(message)",
+                    comment: "Alert when it is not known whether the bolus from the treatments screen was delivered; the argument is the pump's reason"
+                )
+            case let .failed(message, _):
+                return message
+            case .enacted,
+                 .none:
+                return String(
+                    localized: "The outcome of the bolus is not known. Check pump history before repeating the bolus.",
+                    comment: "Alert when no outcome was reported for the bolus from the treatments screen"
+                )
+            }
         }
 
         /// Tells the user the meal was saved although the bolus entered with it was not (or may not have been) delivered.
@@ -743,7 +789,11 @@ extension Treatments {
             }
 
             await MainActor.run {
-                self.amount = min(self.amount, self.maxBolus * 3)
+                // Rounded to the bolus increment like a Shortcut, but not capped at the pump's largest bolus volume
+                self.amount = ExternalInsulin.rounded(
+                    min(self.amount, self.maxBolus * 3),
+                    toIncrement: self.settings.preferences.bolusIncrement
+                )
                 // show loading animation
                 self.isAwaitingDeterminationResult = true
             }
@@ -757,11 +807,7 @@ extension Treatments {
                 return true
             } catch {
                 warning(.bolus, "Determination after external insulin failed", error: error)
-                await MainActor.run {
-                    self.isAwaitingDeterminationResult = false
-                    self.showDeterminationFailureAlert = true
-                    self.determinationFailureMessage = error.localizedDescription
-                }
+                await showSubmissionFailure(ExternalInsulin.loggedButForecastFailedMessage(amount: amount, error: error))
                 return false
             }
         }
@@ -857,6 +903,9 @@ extension Treatments.StateModel: DeterminationObserver, BolusFailureObserver {
         guard isActive else { return }
 
         DispatchQueue.main.async {
+            // While a bolus is enacted, or a failure is shown, the submission decides when the screen closes.
+            // Closing it here dismissed the "carbs saved, bolus not delivered" alert before the user saw it.
+            guard !self.isEnactingBolus, !self.showDeterminationFailureAlert else { return }
             self.isAwaitingDeterminationResult = false
             if self.addButtonPressed {
                 self.hideModal()
@@ -868,9 +917,10 @@ extension Treatments.StateModel: DeterminationObserver, BolusFailureObserver {
         DispatchQueue.main.async {
             // A dismissed instance may still observe until dealloc — don't hide an unrelated modal.
             guard self.isActive else { return }
+            // The submission reports a failed bolus itself and its alert closes the screen
+            guard !self.isEnactingBolus, !self.showDeterminationFailureAlert else { return }
             self.isAwaitingDeterminationResult = false
-            // The submission shows that the carbs were saved without the bolus; its alert closes the screen
-            if self.addButtonPressed, !self.keepsScreenOnBolusFailure {
+            if self.addButtonPressed {
                 self.hideModal()
             }
         }
