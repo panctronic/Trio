@@ -1192,3 +1192,34 @@ private final class RemoteControlTestAssembly: Assembly {
         #expect(orphan.createdAt == orphan.date)
     }
 }
+
+@Suite("Nightscout Object Id Store Site Tests") struct NightscoutObjectIdStoreSiteTests {
+    private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+    @Test("A URL that reads back nil does not reset the cache; removing Nightscout does") func nilReadIsNotASiteChange() throws {
+        let suite = "NightscoutObjectIdStoreSiteTests-\(UUID().uuidString)"
+        let storage = try #require(UserDefaults(suiteName: suite))
+        defer { storage.removePersistentDomain(forName: suite) }
+        var configuredSite: String? = "https://a.example"
+        let store = NightscoutObjectIdStore(storage: storage) { configuredSite }
+        let objectId = "5f0000000000000000000001"
+
+        let start = now.addingTimeInterval(-3600)
+        #expect(store.snapshot(at: start).firstRecordedAt == start)
+        store.record([("bolus", objectId)], fromSite: configuredSite, at: now)
+
+        // e.g. the Keychain isn't readable yet
+        configuredSite = nil
+        let duringFailure = store.snapshot(at: now)
+        #expect(duringFailure.siteURL == "https://a.example")
+        #expect(duringFailure.firstRecordedAt == start)
+        #expect(duringFailure.objectId(forLocalId: "bolus") == objectId)
+
+        configuredSite = "https://a.example"
+        #expect(store.snapshot(at: now).objectId(forLocalId: "bolus") == objectId)
+
+        store.forgetSite(at: now)
+        #expect(store.snapshot(at: now).siteURL == "https://a.example")
+        #expect(store.snapshot(at: now).entries.isEmpty)
+    }
+}

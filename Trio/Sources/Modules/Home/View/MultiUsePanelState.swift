@@ -6,6 +6,8 @@ enum MultiUsePanelState: Equatable {
     case pumpTimeMismatch
     case cgmStale
     case maxIOBZero
+    /// Nightscout upload is on, but its URL or API secret reads back empty: uploads stop without this.
+    case nightscoutCredentialsMissing
     case tidepoolLoginRequired
     /// Set up before usage data sharing became opt-in and never asked; nothing is sent until answered.
     case telemetryConsent
@@ -24,6 +26,7 @@ enum MultiUsePanelState: Equatable {
         tidepoolLoginRequired: Bool,
         hasUnacknowledgedReleaseNotes: Bool,
         telemetryConsentUndecided: Bool = false,
+        nightscoutCredentialsMissing: Bool = false,
         dosingMode: DosingMode,
         now: Date
     ) -> MultiUsePanelState {
@@ -35,12 +38,29 @@ enum MultiUsePanelState: Equatable {
             return .dosingModeLimited(dosingMode)
         }
         if maxIOB <= 0 { return .maxIOBZero }
-        // Uploads only, so it yields to every dosing-related warning above.
+        // Uploads only, so these yield to every dosing-related warning above.
+        if nightscoutCredentialsMissing { return .nightscoutCredentialsMissing }
         if tidepoolLoginRequired { return .tidepoolLoginRequired }
         // A question, not a warning: yields to everything above, and nothing is sent while it waits.
         if telemetryConsentUndecided { return .telemetryConsent }
         // Informational, so it yields to every warning above but still displaces the stats.
         if hasUnacknowledgedReleaseNotes { return .whatsNew }
         return .stats
+    }
+}
+
+extension MultiUsePanelState {
+    /// Whether to warn that Nightscout upload is on without credentials: true when the URL or secret definitely reads
+    /// back empty, false when both are there or upload is off, nil when the Keychain couldn't be read (keep whatever
+    /// was shown before rather than flash a warning while the phone is locked).
+    static func nightscoutCredentialsMissing(
+        uploadEnabled: Bool,
+        url: Result<String?, KeychainError>,
+        secret: Result<String?, KeychainError>
+    ) -> Bool? {
+        guard uploadEnabled else { return false }
+        guard case let .success(urlValue) = url, case let .success(secretValue) = secret else { return nil }
+        let isEmpty = { (value: String?) in (value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty }
+        return isEmpty(urlValue) || isEmpty(secretValue)
     }
 }

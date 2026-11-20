@@ -36,6 +36,8 @@ final class PropertyPersistentFlags {
     // only an explicit `false` opts out.
     @PersistedProperty(key: "crashlyticsSharingEnabled") var crashlyticsSharingEnabled: Bool?
     @PersistedProperty(key: "telemetrySharingEnabled") var telemetrySharingEnabled: Bool?
+    // "Not Now" on the Home usage data prompt hides it until this date.
+    @PersistedProperty(key: "telemetryConsentSnoozedUntil") var telemetryConsentSnoozedUntil: Date?
     @PersistedProperty(key: "telemetryLastSentAt") var telemetryLastSentAt: Date?
     @PersistedProperty(key: "telemetryAnonymousLastSentAt") var telemetryAnonymousLastSentAt: Date?
     @PersistedProperty(key: "telemetryLastAttemptAt") var telemetryLastAttemptAt: Date?

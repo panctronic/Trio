@@ -97,9 +97,15 @@ class TrioRemoteControl: Injectable {
             return
         }
 
-        let storedSecret = RemoteControlSecretStore.secret(keychain: keychain) ?? ""
-        guard !storedSecret.isEmpty else {
+        let storedSecret: String
+        switch RemoteControlSecretStore.read(keychain: keychain) {
+        case let .success(secret?):
+            storedSecret = secret
+        case .success(nil):
             await logError("Command rejected: shared secret is missing in settings. Cannot authenticate the command.")
+            return
+        case .failure:
+            await logError("Command rejected: the shared secret could not be read from the Keychain. Unlock the phone and try again.")
             return
         }
 

@@ -68,9 +68,14 @@ enum TelemetryConsent: Equatable {
 
     var allowsSending: Bool { self == .optedIn }
 
-    /// Whether to ask an existing user (onboarding already done) for a choice.
-    func needsPrompt(onboardingCompleted: Bool) -> Bool {
-        self == .undecided && onboardingCompleted
+    /// How long "Not Now" on the Home prompt puts the question away.
+    static let promptSnooze: TimeInterval = 7 * 24 * 60 * 60
+
+    /// Whether to ask an existing user (onboarding already done) for a choice, unless they said "Not Now" recently.
+    func needsPrompt(onboardingCompleted: Bool, snoozedUntil: Date? = nil, now: Date = Date()) -> Bool {
+        guard self == .undecided, onboardingCompleted else { return false }
+        guard let snoozedUntil else { return true }
+        return now >= snoozedUntil
     }
 }
 
@@ -291,7 +296,12 @@ final class TelemetryClient: Injectable {
         let wasOptedIn = TelemetryConsent.current.allowsSending
         PropertyPersistentFlags.shared.telemetrySharingEnabled = granted
         info(.telemetry, "Usage data sharing \(granted ? "enabled" : "disabled") by the user")
-        guard granted, !wasOptedIn else { return }
+        if !granted {
+            // nothing identifies this install any more; a later opt-in starts with a fresh ID
+            PropertyPersistentFlags.shared.telemetryInstallId = nil
+            return
+        }
+        guard !wasOptedIn else { return }
         let client = shared
         client.initializeInstallID()
         client.scheduleRecurring()
@@ -328,7 +338,10 @@ final class TelemetryClient: Injectable {
         if let idfv = UIDevice.current.identifierForVendor?.uuidString {
             payload["idfv"] = idfv
         }
-        payload["installId"] = installId()
+        // The preview shows the payload before anyone agreed; the ID only comes into existence on opt-in.
+        payload["installId"] = TelemetryConsent.current.allowsSending
+            ? installId()
+            : (PropertyPersistentFlags.shared.telemetryInstallId ?? "created only if you agree to share")
 
         payload["device"] = Self.hardwareIdentifier()
         payload["platform"] = Self.detectPlatform()

@@ -649,8 +649,11 @@ extension Home.RootView {
             tidepoolLoginRequired: state.tidepoolLoginRequired,
             hasUnacknowledgedReleaseNotes: releaseNotesService.hasUnacknowledgedNotes,
             telemetryConsentUndecided: telemetryConsent.needsPrompt(
-                onboardingCompleted: PropertyPersistentFlags.shared.onboardingCompleted != false
+                onboardingCompleted: PropertyPersistentFlags.shared.onboardingCompleted != false,
+                snoozedUntil: telemetryConsentSnoozedUntil,
+                now: state.timerDate
             ),
+            nightscoutCredentialsMissing: state.nightscoutCredentialsMissing,
             dosingMode: state.dosingMode,
             now: state.timerDate
         )
@@ -745,6 +748,18 @@ extension Home.RootView {
             ) {
                 openMaxIOBSetting()
             }
+        case .nightscoutCredentialsMissing:
+            panelBanner(
+                systemImage: "exclamationmark.icloud.fill",
+                title: String(localized: "Nightscout Not Connected", comment: "Home panel title"),
+                subtitle: String(
+                    localized: "Uploads are on, but the Nightscout URL or API secret is missing. Tap to check.",
+                    comment: "Home panel when Nightscout upload is enabled without credentials"
+                ),
+                tint: .orange
+            ) {
+                openNightscoutSettings()
+            }
         case .tidepoolLoginRequired:
             panelBanner(
                 systemImage: "icloud.slash.fill",
@@ -807,6 +822,11 @@ extension Home.RootView {
             screen: .unitsAndLimits,
             scrollLabel: "Maximum Insulin on Board (IOB)".localized
         ))
+    }
+
+    func openNightscoutSettings() {
+        selectedTab = 3
+        settingsPath.append(SearchResultTarget(screen: .nighscoutConfig, scrollLabel: "Nightscout".localized))
     }
 
     func openTidepoolSetting() {

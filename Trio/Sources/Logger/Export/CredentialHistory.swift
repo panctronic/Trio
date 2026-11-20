@@ -19,6 +19,9 @@ enum CredentialHistory {
     static let keepFor: TimeInterval = LogRetentionPolicy.default.maxAge + 24 * 60 * 60
     /// Bound on stored values (each credential also stores its encoded forms); the least recently seen go first.
     static let maxEntries = 500
+    /// Bound per kind, so values that churn (Tidepool tokens are `.secret` and refresh often) can't push out a
+    /// replaced Nightscout secret or account of another kind.
+    static let maxEntriesPerKind = 100
     /// `lastSeen` is only refreshed this often, so a foreground transition doesn't rewrite the Keychain item.
     static let refreshInterval: TimeInterval = 60 * 60
 
@@ -35,22 +38,30 @@ enum CredentialHistory {
             if let existing = byKey[key], now.timeIntervalSince(existing.lastSeen) < refreshInterval { continue }
             byKey[key] = Entry(value: value.value, kind: value.kind.rawValue, lastSeen: now)
         }
-        return byKey.values
-            .filter { now.timeIntervalSince($0.lastSeen) <= keepFor }
-            .sorted { $0.lastSeen != $1.lastSeen ? $0.lastSeen > $1.lastSeen : $0.value < $1.value }
-            .prefix(maxEntries)
-            .map { $0 }
+        let newestFirst: (Entry, Entry) -> Bool = {
+            $0.lastSeen != $1.lastSeen ? $0.lastSeen > $1.lastSeen : $0.value < $1.value
+        }
+        let kept = Dictionary(grouping: byKey.values.filter { now.timeIntervalSince($0.lastSeen) <= keepFor }, by: \.kind)
+            .values
+            .flatMap { $0.sorted(by: newestFirst).prefix(maxEntriesPerKind) }
+        return Array(kept.sorted(by: newestFirst).prefix(maxEntries))
     }
 
-    static func load(keychain: Keychain) -> [Entry] {
-        guard case let .success(entries?) = keychain.getValue([Entry].self, forKey: keychainKey) as Result<[Entry]?, KeychainError>
-        else { return [] }
-        return entries
+    /// The stored history: empty when there is none yet, nil when it couldn't be read or decoded.
+    static func load(keychain: Keychain) -> [Entry]? {
+        switch keychain.getValue([Entry].self, forKey: keychainKey) as Result<[Entry]?, KeychainError> {
+        case let .success(entries): return entries ?? []
+        case .failure: return nil
+        }
     }
 
-    /// Remembers the credentials in use now. Writes only when something changed.
+    /// Remembers the credentials in use now. Writes only when something changed, and never when the stored history
+    /// couldn't be read (that would replace it with only the current values).
     static func record(_ current: [Redactor.ExactValue], keychain: Keychain, now: Date = Date()) {
-        let stored = load(keychain: keychain)
+        guard let stored = load(keychain: keychain) else {
+            warning(.storage, "Reading recent credentials for log redaction failed; not updating them")
+            return
+        }
         let updated = merged(stored, with: current, now: now)
         guard updated != stored else { return }
         if case .failure = keychain.setValue(updated, forKey: keychainKey) as Result<Void, KeychainError> {
@@ -60,7 +71,7 @@ enum CredentialHistory {
 
     /// The remembered values that may still appear in retained logs.
     static func recentValues(keychain: Keychain, now: Date = Date()) -> [Redactor.ExactValue] {
-        merged(load(keychain: keychain), with: [], now: now).compactMap { entry in
+        merged(load(keychain: keychain) ?? [], with: [], now: now).compactMap { entry in
             Redactor.Kind(rawValue: entry.kind).map { Redactor.ExactValue(value: entry.value, kind: $0) }
         }
     }
