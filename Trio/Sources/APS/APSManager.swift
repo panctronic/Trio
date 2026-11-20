@@ -121,7 +121,7 @@ enum APSError: LocalizedError {
 actor LoopGuard {
     private var isRunning = false
     private var isDeterminingStandalone = false
-    private var loopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var loopWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
     private var standaloneWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     /// Atomically checks whether a new loop can start and marks it as running if so.
@@ -139,13 +139,24 @@ actor LoopGuard {
         isRunning = false
         let waiters = loopWaiters
         loopWaiters.removeAll()
-        waiters.forEach { $0.resume() }
+        waiters.values.forEach { $0.resume(returning: true) }
     }
 
-    /// Returns once no loop is running.
-    func waitForLoop() async {
-        guard isRunning else { return }
-        await withCheckedContinuation { loopWaiters.append($0) }
+    /// Returns true once no loop is running, or false if one is still running after `timeout`.
+    func waitForLoop(timeout: TimeInterval) async -> Bool {
+        guard isRunning else { return true }
+        let waiterID = UUID()
+        return await withCheckedContinuation { continuation in
+            loopWaiters[waiterID] = continuation
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+                await self?.timeOutLoopWaiter(waiterID)
+            }
+        }
+    }
+
+    private func timeOutLoopWaiter(_ waiterID: UUID) {
+        loopWaiters.removeValue(forKey: waiterID)?.resume(returning: false)
     }
 
     /// Claims the guard for a determination that runs outside the loop. If another one is running it
@@ -405,7 +416,15 @@ final class BaseAPSManager: APSManager, Injectable {
 
             // Inside the loop guard and background task, before determining: the switch can't interleave with a
             // running loop, and this loop doses with the new profile.
-            await self.therapyProfileManager?.runDueScheduledSwitch(inLoop: true)
+            if let therapyProfileManager = self.therapyProfileManager {
+                do {
+                    try await withTimeout(seconds: Self.scheduledSwitchWait) {
+                        await therapyProfileManager.runDueScheduledSwitch(inLoop: true)
+                    }
+                } catch {
+                    warning(.loop, "Scheduled profile switch did not finish in time, looping with the current profile")
+                }
+            }
 
             let loopStartDate = Date()
             lastLoopStartDate = loopStartDate
@@ -673,7 +692,10 @@ final class BaseAPSManager: APSManager, Injectable {
     }
 
     func determineBasalSync() async throws {
-        await loopGuard.waitForLoop()
+        guard await loopGuard.waitForLoop(timeout: Self.loopWait) else {
+            warning(.loop, "Standalone determination not run: the running loop did not finish in time")
+            throw APSError.apsError(message: "The loop is still running. The next loop will update the recommendation.")
+        }
         // Never return as if a fresh determination ran when it did not: callers rely on it after
         // a bolus, carb entry or adjustment.
         guard await loopGuard.claimStandaloneDetermination(timeout: Self.standaloneDeterminationWait) else {
@@ -688,6 +710,14 @@ final class BaseAPSManager: APSManager, Injectable {
         }
         await loopGuard.finishStandaloneDetermination()
     }
+
+    /// How long a standalone determination waits for a running loop before giving up. A loop holding the guard longer
+    /// than this is stuck; callers must not wait on it forever.
+    private static let loopWait: TimeInterval = 120
+
+    /// How long the loop gives a due scheduled profile switch before going on without it. The pump write inside it has
+    /// its own, shorter timeout; this only catches a switch held up elsewhere.
+    private static let scheduledSwitchWait: TimeInterval = 60
 
     /// How long a standalone determination waits for one already running before giving up.
     private static let standaloneDeterminationWait: TimeInterval = 60

@@ -112,6 +112,24 @@ import Testing
         #expect(!context.recorder.events.contains(.recompute))
     }
 
+    @Test("A pump write that never answers times out and is retried") func pumpWriteTimesOut() async throws {
+        let context = try await makeContext()
+        let gate = AsyncGate()
+        context.recorder.pumpGate = { await gate.wait() }
+        context.recorder.pumpSyncTimeout = 0.3
+        context.recorder.now = date("2026-11-14 07:01")
+
+        await context.manager.runDueScheduledSwitch(inLoop: true)
+        #expect(context.manager.activeProfileName == "Default")
+        #expect(try await settledAt(context) == date("2026-11-13 12:00"))
+
+        await gate.open()
+        context.recorder.pumpGate = nil
+        context.recorder.now = date("2026-11-14 07:06")
+        await context.manager.runDueScheduledSwitch(inLoop: true)
+        #expect(context.manager.activeProfileName == "Weekend")
+    }
+
     @Test("Editing the list keeps a due start that is still retrying") func editKeepsPendingStart() async throws {
         let context = try await makeContext()
         context.recorder.pumpError = PumpFailure()

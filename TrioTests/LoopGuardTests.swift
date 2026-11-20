@@ -40,4 +40,21 @@ import Testing
         let results = [await a.value, await b.value]
         #expect(results.filter { $0 }.count == 1)
     }
+
+    @Test("Waiting for a loop that never finishes gives up after the timeout") func loopWaitTimesOut() async {
+        let loopGuard = LoopGuard()
+        #expect(await loopGuard.tryStart(minInterval: 0, lastLoopDate: .distantPast, lastLoopStartDate: .distantPast))
+        #expect(await loopGuard.waitForLoop(timeout: 0.2) == false)
+        await loopGuard.finish()
+        #expect(await loopGuard.waitForLoop(timeout: 0.2))
+    }
+
+    @Test("Waiting for a loop returns when it finishes") func loopWaitReturnsOnFinish() async {
+        let loopGuard = LoopGuard()
+        #expect(await loopGuard.tryStart(minInterval: 0, lastLoopDate: .distantPast, lastLoopStartDate: .distantPast))
+        let waiter = Task { await loopGuard.waitForLoop(timeout: 5) }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        await loopGuard.finish()
+        #expect(await waiter.value)
+    }
 }

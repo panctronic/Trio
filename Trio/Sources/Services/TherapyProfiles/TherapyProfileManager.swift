@@ -187,6 +187,7 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
     private let basalLimitsOverride: (@Sendable() -> TherapyBasalLimits)?
     private let pumpSuspendedOverride: (@Sendable() -> Bool)?
     private let bolusInProgressOverride: (@Sendable() -> Bool)?
+    private let pumpSyncTimeoutOverride: (@Sendable() -> TimeInterval)?
     private let recompute: (@Sendable() async -> Void)?
     private let now: @Sendable() -> Date
     private let calendarOverride: Calendar?
@@ -207,8 +208,10 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         bolusInProgress: (@Sendable() -> Bool)? = nil,
         recompute: (@Sendable() async -> Void)? = nil,
         now: @escaping @Sendable() -> Date = { Date() },
-        calendar: Calendar? = nil
+        calendar: Calendar? = nil,
+        pumpSyncTimeout: (@Sendable() -> TimeInterval)? = nil
     ) {
+        pumpSyncTimeoutOverride = pumpSyncTimeout
         syncBasalScheduleOverride = syncBasalSchedule
         basalLimitsOverride = basalLimits
         pumpSuspendedOverride = pumpSuspended
@@ -905,11 +908,17 @@ final class BaseTherapyProfileManager: TherapyProfileManager, Injectable, @unche
         }
     }
 
+    /// How long a basal schedule write may take before it counts as failed. A pump manager whose callback never comes
+    /// would otherwise hold every profile change, and the loop that runs a scheduled switch, forever.
+    static let pumpSyncTimeout: TimeInterval = 45
+
     private func syncBasalSchedule(_ entries: [BasalProfileEntry]) async throws {
-        if let syncBasalScheduleOverride {
-            return try await syncBasalScheduleOverride(entries)
+        try await withTimeout(seconds: pumpSyncTimeoutOverride?() ?? Self.pumpSyncTimeout) { [self] in
+            if let syncBasalScheduleOverride {
+                return try await syncBasalScheduleOverride(entries)
+            }
+            try await syncPumpBasalSchedule(entries)
         }
-        try await syncPumpBasalSchedule(entries)
     }
 
     /// Pump managers take commands on the main thread.
