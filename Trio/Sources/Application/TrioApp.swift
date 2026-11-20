@@ -98,9 +98,12 @@ extension Notification.Name {
     /// `TelemetryClient` constructs the APS/device graph, whose first pump/CGM
     /// save crashes while the persistent stores are still loading.
     ///
-    /// Materialize the install ID even when sharing is disabled, then record
-    /// this cold launch into the sliding 7-day window, then drive cadence via
-    /// layered triggers — listed below in priority of reliability:
+    /// Telemetry is opt-in: until the user has said yes (onboarding, the
+    /// one-time Home prompt, or App Diagnostics) nothing past recording this
+    /// cold launch locally happens here, and `TelemetryClient.recordConsent`
+    /// arms the cadence when they do. With consent, materialize the install ID,
+    /// then drive cadence via layered triggers — listed below in priority of
+    /// reliability:
     ///
     ///   1. SHA-change ping: build updated since last send. Awaited so
     ///      the lastSentAt stamp is fresh before the overdue check.
@@ -116,8 +119,9 @@ extension Notification.Name {
         let telemetry = resolver.resolve(TelemetryClient.self)!
         // hands the foreground-transition hook its reference; nil until now
         appDelegate.telemetry = telemetry
-        telemetry.initializeInstallID()
         telemetry.recordColdLaunch()
+        guard TelemetryConsent.current.allowsSending else { return }
+        telemetry.initializeInstallID()
         Task.detached {
             if telemetry.buildShaChangedSinceLastSend() {
                 await telemetry.maybeSend(reason: .buildChange)

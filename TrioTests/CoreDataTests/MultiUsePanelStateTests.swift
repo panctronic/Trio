@@ -15,6 +15,7 @@ import Testing
         maxIOB: Decimal = 10,
         tidepoolLoginRequired: Bool = false,
         hasUnacknowledgedReleaseNotes: Bool = false,
+        telemetryConsentUndecided: Bool = false,
         dosingMode: DosingMode = .closed
     ) -> MultiUsePanelState {
         MultiUsePanelState.resolve(
@@ -24,6 +25,7 @@ import Testing
             maxIOB: maxIOB,
             tidepoolLoginRequired: tidepoolLoginRequired,
             hasUnacknowledgedReleaseNotes: hasUnacknowledgedReleaseNotes,
+            telemetryConsentUndecided: telemetryConsentUndecided,
             dosingMode: dosingMode,
             now: now
         )
@@ -115,5 +117,17 @@ import Testing
         ) == .tidepoolLoginRequired)
         #expect(resolve(lastGlucoseDate: fresh, maxIOB: 0, tidepoolLoginRequired: true) == .maxIOBZero)
         #expect(resolve(lastGlucoseDate: stale, tidepoolLoginRequired: true) == .cgmStale)
+    }
+
+    @Test("The usage data question sits between Tidepool login and release notes") func testTelemetryConsent() {
+        #expect(resolve(lastGlucoseDate: fresh, telemetryConsentUndecided: true) == .telemetryConsent)
+        #expect(resolve(
+            lastGlucoseDate: fresh,
+            hasUnacknowledgedReleaseNotes: true,
+            telemetryConsentUndecided: true
+        ) == .telemetryConsent)
+        #expect(resolve(lastGlucoseDate: fresh, tidepoolLoginRequired: true, telemetryConsentUndecided: true) ==
+            .tidepoolLoginRequired)
+        #expect(resolve(lastGlucoseDate: stale, telemetryConsentUndecided: true) == .cgmStale)
     }
 }

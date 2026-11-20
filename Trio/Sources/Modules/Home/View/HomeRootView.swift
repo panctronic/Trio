@@ -35,6 +35,10 @@ extension Home {
         @State var showSnoozeSheet: Bool = false
         @State var showManualGlucose: Bool = false
         @State var showReleaseNotes: Bool = false
+        /// Usage data sharing choice; `.undecided` shows the one-time consent banner. Re-read on appear, since
+        /// App Diagnostics can change it.
+        @State var telemetryConsent = TelemetryConsent.current
+        @State var showTelemetryConsent = false
         @ObservedObject var releaseNotesService = ReleaseNotesService.shared
         // Pull-down-to-force-loop (see HomeRootView+Refresh.swift)
         @State var pullOffset: CGFloat = 0
@@ -325,6 +329,13 @@ extension Home {
             }
             .sheet(isPresented: $showSnoozeSheet) {
                 SnoozeAlertsSheetView(resolver: resolver, isPresented: $showSnoozeSheet)
+            }
+            .onAppear { telemetryConsent = .current }
+            .sheet(isPresented: $showTelemetryConsent) {
+                TelemetryConsentSheet { granted in
+                    TelemetryClient.recordConsent(granted)
+                    telemetryConsent = .current
+                }
             }
             .sheet(isPresented: $showReleaseNotes) {
                 if let notes = releaseNotesService.notes {

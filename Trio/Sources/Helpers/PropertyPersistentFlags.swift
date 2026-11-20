@@ -29,9 +29,11 @@ final class PropertyPersistentFlags {
 
     //
     // See Trio/Sources/Services/Telemetry/TelemetryClient.swift.
-    // `telemetrySharingEnabled` gates the anonymous-usage POST;
-    // `crashlyticsSharingEnabled` is the Crashlytics gate. Both streams are on
-    // by default: `nil` means enabled; only an explicit `false` opts out.
+    // `telemetrySharingEnabled` gates every telemetry request and is opt-in:
+    // `nil` means the user has not chosen yet and nothing is sent, only an
+    // explicit `true` allows sending (see `TelemetryConsent`).
+    // `crashlyticsSharingEnabled` is the Crashlytics gate: `nil` means enabled,
+    // only an explicit `false` opts out.
     @PersistedProperty(key: "crashlyticsSharingEnabled") var crashlyticsSharingEnabled: Bool?
     @PersistedProperty(key: "telemetrySharingEnabled") var telemetrySharingEnabled: Bool?
     @PersistedProperty(key: "telemetryLastSentAt") var telemetryLastSentAt: Date?

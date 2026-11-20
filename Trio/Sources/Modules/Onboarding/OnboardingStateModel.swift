@@ -216,6 +216,9 @@ extension Onboarding {
         var shouldDisplayCustomNotificationAlert: Bool = false
 
         var shouldDisplayBluetoothRequestAlert: Bool = false
+
+        /// Usage data sharing answer from the diagnostics step; nil until the user picks one (Next stays disabled).
+        var telemetryConsentChoice: Bool?
         var hasBluetoothGranted = false
 
         // MARK: - Subscribe

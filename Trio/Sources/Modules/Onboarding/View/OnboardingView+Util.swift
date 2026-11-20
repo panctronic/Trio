@@ -110,6 +110,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
     case targetBehavior
     case notifications
     case bluetooth
+    case diagnostics
     case completed
 
     var id: Int { rawValue }
@@ -153,6 +154,8 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
             return String(localized: "Notifications")
         case .bluetooth:
             return String(localized: "Bluetooth")
+        case .diagnostics:
+            return String(localized: "Usage Data", comment: "Onboarding step title for the usage data sharing choice")
         case .completed:
             return String(localized: "All Set!")
         }
@@ -221,6 +224,11 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
             return String(localized: " Allow Trio to send you Notifications. These may include alerts, sounds, and icon badges.")
         case .bluetooth:
             return String(localized: "Allow Trio to use Bluetooth to communicate with your insulin pump and CGM.")
+        case .diagnostics:
+            return String(
+                localized: "Choose whether Trio may share anonymous usage data with the Trio team.",
+                comment: "Onboarding step description for the usage data sharing choice"
+            )
         case .completed:
             return String(
                 localized: "Great job! You've completed the initial setup of Trio. You can always adjust these settings later in the app."
@@ -263,6 +271,8 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
             return "bell.badge.fill"
         case .bluetooth:
             return "logo.bluetooth.capsule.portrait.fill"
+        case .diagnostics:
+            return "chart.bar.doc.horizontal.fill"
         case .completed:
             return "checkmark.circle.fill"
         }
@@ -292,6 +302,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
              .bluetooth,
              .completed,
              .deliveryLimits,
+             .diagnostics,
              .nightscout,
              .notifications,
              .overview,

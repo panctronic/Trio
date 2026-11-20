@@ -43,6 +43,7 @@ extension Onboarding {
                  .targetBehavior:
                 currentChapter = .algorithmSettings
             case .bluetooth,
+                 .diagnostics,
                  .notifications:
                 currentChapter = .permissionRequests
             default:
@@ -76,6 +77,9 @@ extension Onboarding {
                 (currentStep == .nightscout && hasValidNightscoutConnection)
                 ||
                 (currentStep == .nightscout && didSelectNightscoutImportOption)
+                ||
+                // an explicit yes or no; there is no default answer
+                (currentStep == .diagnostics && state.telemetryConsentChoice == nil)
         }
 
         var body: some View {
@@ -395,6 +399,8 @@ struct OnboardingStepContent: View {
                                     bluetoothManager: state.bluetoothManager,
                                     currentStep: $currentStep
                                 )
+                            case .diagnostics:
+                                DiagnosticsConsentStepView(state: state)
                             case .completed:
                                 CompletedStepView(isOnboardingCompleted: true, currentChapter: nil)
                             }
@@ -655,7 +661,7 @@ struct OnboardingNavigationButtons: View {
             }
 
         case .completed:
-            currentStep = .bluetooth
+            currentStep = .diagnostics
 
         default:
             if let previous = currentStep.previous {
@@ -807,6 +813,12 @@ struct OnboardingNavigationButtons: View {
                 } else {
                     currentStep = next
                 }
+            }
+
+        case .diagnostics:
+            if let choice = state.telemetryConsentChoice, let next = currentStep.next {
+                TelemetryClient.recordConsent(choice)
+                currentStep = next
             }
 
         case .completed:
