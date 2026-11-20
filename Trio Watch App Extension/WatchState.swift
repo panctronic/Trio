@@ -72,6 +72,7 @@ import WatchConnectivity
     var acknowledgementStatus: AcknowledgementStatus = .pending
     var acknowledgmentMessage: String = ""
     var shouldNavigateToRoot: Bool = true
+    var pendingBolusOverride: PendingBolusOverride?
     @ObservationIgnored private var acknowledgmentTimeoutWorkItem: DispatchWorkItem?
 
     /// Long enough for a pump to accept a bolus, short enough that the user isn't left guessing
@@ -504,6 +505,25 @@ import WatchConnectivity
                 case .comboComplete:
                     self.isMealBolusCombo = false
                     self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
+                case .bolusNeedsOverride:
+                    self.isMealBolusCombo = false
+                    if let amount = message[WatchMessageKeys.bolus] as? NSNumber,
+                       let overriddenChecks = message[WatchMessageKeys.overriddenBolusChecks] as? [String],
+                       let issuedAt = message[WatchMessageKeys.bolusOverrideIssuedAt] as? TimeInterval
+                    {
+                        // The phone answered; the user now decides, so the no-answer timeout must not fire
+                        self.acknowledgmentTimeoutWorkItem?.cancel()
+                        self.acknowledgmentTimeoutWorkItem = nil
+                        self.showCommsAnimation = false
+                        self.pendingBolusOverride = PendingBolusOverride(
+                            amount: amount.decimalValue,
+                            reason: ackMessage,
+                            overriddenChecks: overriddenChecks,
+                            issuedAt: issuedAt
+                        )
+                    } else {
+                        self.handleAcknowledgment(success: false, message: ackMessage, isFinal: true)
+                    }
                 default:
                     self.isMealBolusCombo = false
                     self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
