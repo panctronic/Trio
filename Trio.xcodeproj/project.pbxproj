@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		CD5433515FD75D1421AFE509 /* RemoteTreatmentGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B55FF1780B839DC309AE2581 /* RemoteTreatmentGuardTests.swift */; };
+		2EE540367A3ADE501049F5FE /* TreatmentEntryPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCB7728CB2DCA38B6627C46 /* TreatmentEntryPathTests.swift */; };
 		59590795A904CD4E7C8AA7CD /* NightscoutObjectIdStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9CAF7E4571224EBB2EF567 /* NightscoutObjectIdStore.swift */; };
 		034BF913F9639417555E1B4A /* TrioRemoteControl+TreatmentGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CFC1FA4917A7921B13B88A /* TrioRemoteControl+TreatmentGuard.swift */; };
 		6B8993C91BED4001A5D8304A /* RemoteTreatmentGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E21E5C9279F886D2BE46E3 /* RemoteTreatmentGuard.swift */; };
@@ -1302,6 +1303,7 @@
 
 /* Begin PBXFileReference section */
 		B55FF1780B839DC309AE2581 /* RemoteTreatmentGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTreatmentGuardTests.swift; sourceTree = "<group>"; };
+		4BCB7728CB2DCA38B6627C46 /* TreatmentEntryPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreatmentEntryPathTests.swift; sourceTree = "<group>"; };
 		4B9CAF7E4571224EBB2EF567 /* NightscoutObjectIdStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightscoutObjectIdStore.swift; sourceTree = "<group>"; };
 		F2CFC1FA4917A7921B13B88A /* TrioRemoteControl+TreatmentGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+TreatmentGuard.swift"; sourceTree = "<group>"; };
 		77E21E5C9279F886D2BE46E3 /* RemoteTreatmentGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTreatmentGuard.swift; sourceTree = "<group>"; };
@@ -3739,6 +3741,7 @@
 				DC01A00D2E9F100000000004 /* DeviceCatalogTests.swift */,
 				98546920BB7247B0AC73449A /* ContainerResolutionTests.swift */,
 				B55FF1780B839DC309AE2581 /* RemoteTreatmentGuardTests.swift */,
+				4BCB7728CB2DCA38B6627C46 /* TreatmentEntryPathTests.swift */,
 				7AF74BBFE9F7B8CA9187C4DB /* RemoteMealMutationPayloadTests.swift */,
 				3B5CD2C72D4AECD500CE213C /* OpenAPSSwiftTests */,
 				B3919BBB515547118D684CA2 /* SettingsSearchTests.swift */,
@@ -6810,6 +6813,7 @@
 				DC01A00E2E9F100000000005 /* DeviceCatalogTests.swift in Sources */,
 				10DAA318F47843A4B894173D /* ContainerResolutionTests.swift in Sources */,
 				CD5433515FD75D1421AFE509 /* RemoteTreatmentGuardTests.swift in Sources */,
+				2EE540367A3ADE501049F5FE /* TreatmentEntryPathTests.swift in Sources */,
 				940584C38CB62676214A2107 /* RemoteMealMutationPayloadTests.swift in Sources */,
 				3B1C5C432D68E269004E9273 /* Extensions.swift in Sources */,
 				3BC26E552D7418830066ACD6 /* IobSuspendTests.swift in Sources */,

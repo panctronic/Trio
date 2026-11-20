@@ -1089,6 +1089,24 @@
         }
       }
     },
+    "%@ g is more than the max carbs of %@ g." : {
+      "comment" : "Watch message when carbs above the max carbs setting are refused"
+    },
+    "Bolus status unknown. Check pump history before repeating." : {
+      "comment" : "Watch message when the outcome of a bolus is not known"
+    },
+    "Carbs logged, bolus not enacted." : {
+      "comment" : "Start of the watch message when carbs were saved but the bolus was not given"
+    },
+    "Carbs logged." : {
+      "comment" : "Start of the watch message when carbs were saved but the bolus failed"
+    },
+    "Carbs must be more than 0 g." : {
+      "comment" : "Watch message when a carbs entry of zero or less is received"
+    },
+    "Nothing logged, no bolus enacted: %@" : {
+      "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
+    },
     " " : {
       "localizations" : {
         "bg" : {
