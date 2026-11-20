@@ -1212,6 +1212,9 @@
     "Warming up" : {
       "comment" : "CGM sensor status tag on the glucose bobble"
     },
+    "We need to make sure you are the owner of the device." : {
+      "comment" : "Reason shown in the Face ID / Touch ID / passcode prompt before a bolus or deleting an insulin entry"
+    },
     "What is never sent" : {
       "comment" : "Heading in the usage data sharing explanation"
     },
