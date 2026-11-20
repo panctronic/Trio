@@ -2,7 +2,8 @@ import Foundation
 import UserNotifications
 import WatchConnectivity
 
-final class WatchNotificationHandler: NSObject, UNUserNotificationCenterDelegate {
+/// Stateless, so it is Sendable and its delegate methods may run on any thread.
+final class WatchNotificationHandler: NSObject, UNUserNotificationCenterDelegate, Sendable {
     static let shared = WatchNotificationHandler()
 
     override private init() {
@@ -19,11 +20,14 @@ final class WatchNotificationHandler: NSObject, UNUserNotificationCenterDelegate
         center.getNotificationCategories { existingCategories in
             let glucoseCategory = NotificationCategoryFactory.createGlucoseCategory()
 
-            var categories = existingCategories
-            categories.update(with: glucoseCategory)
+            var updatedCategories = existingCategories
+            updatedCategories.update(with: glucoseCategory)
+            // UNNotificationCategory is not marked Sendable but is immutable, and nothing else
+            // holds this set, so handing it to the main actor is safe.
+            nonisolated(unsafe) let categories = updatedCategories
             // UNUserNotificationCenter methods should be called on main thread
             Task { @MainActor in
-                center.setNotificationCategories(categories)
+                UNUserNotificationCenter.current().setNotificationCategories(categories)
             }
         }
     }

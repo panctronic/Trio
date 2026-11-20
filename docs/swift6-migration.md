@@ -6,7 +6,8 @@ dosing behaviour unchanged. Update the numbers below whenever a phase lands.
 
 ## Where we are
 
-- Language mode: Swift 5 in every target.
+- Language mode: Swift 6 for `LiveActivityExtension`, `Trio Watch Complication
+  Extension` and `Trio Watch App`; Swift 5 for `Trio` and `TrioTests`.
 - `SWIFT_STRICT_CONCURRENCY` is not set (Xcode's default, `minimal`).
 - Deployment targets: iOS 17.6, watchOS 10. `OSAllocatedUnfairLock` (iOS 16)
   is available; `Synchronization.Mutex` (iOS 18) is not.
@@ -87,7 +88,7 @@ fixes.
 | Phase | Scope | Status |
 | ----- | ----- | ------ |
 | 0 | Measure; write this plan | done |
-| 1 | Leaf targets in Swift 6 mode: LiveActivity extension, watch complication, watch app | in progress |
+| 1 | Leaf targets in Swift 6 mode: LiveActivity extension, watch complication, watch app | done |
 | 2 | Core Data boundary: storages return `NSManagedObjectID`s or Sendable value snapshots; remove `Any` from `fetchEntitiesAsync`; `CoreDataStack` Sendable | todo |
 | 3 | State models: `@Observable` + `@MainActor` (needs `BaseStateModel` and `Router` on the main actor first) | todo |
 | 4 | Turn on `targeted` for `Trio`, then fix the remaining warnings module by module | todo |

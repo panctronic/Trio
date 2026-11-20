@@ -4,7 +4,10 @@ import WatchConnectivity
 
 /// WatchState manages the communication between the Watch app and the iPhone app using WatchConnectivity.
 /// It handles glucose data synchronization and sending treatment requests (bolus, carbs) to the phone.
-@Observable final class WatchState: NSObject, WCSessionDelegate {
+///
+/// All state lives on the main actor. WatchConnectivity calls the `WCSessionDelegate` methods on its
+/// own background queue, so those are `nonisolated` and hand their payload to the main queue.
+@MainActor @Observable final class WatchState: NSObject, WCSessionDelegate {
     /// One instance keeps the session delegate.
     static let shared = WatchState()
 
@@ -194,7 +197,10 @@ import WatchConnectivity
         showCommsAnimation = true
 
         let workItem = DispatchWorkItem { [weak self] in
-            self?.handleMissingAcknowledgment()
+            // Only ever run by the main queue (asyncAfter below).
+            MainActor.assumeIsolated {
+                self?.handleMissingAcknowledgment()
+            }
         }
         acknowledgmentTimeoutWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
@@ -251,17 +257,21 @@ import WatchConnectivity
 
     /// Called when the session has completed activation
     /// Updates the reachability status and logs the activation state
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        DispatchQueue.main.async {
-            if let error = error {
-                WatchLogger.shared.error(.connectivity, "Session activation failed", error: error)
-                return
-            }
+    nonisolated func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {
+        if let error = error {
+            WatchLogger.shared.error(.connectivity, "Session activation failed", error: error)
+            return
+        }
 
-            if activationState == .activated {
-                WatchLogger.shared.info(.connectivity, "Session activated, phone reachable: \(session.isReachable)")
-
-                self.handleSessionActivated(session)
+        if activationState == .activated {
+            WatchLogger.shared.info(.connectivity, "Session activated, phone reachable: \(session.isReachable)")
+            DispatchQueue.main.async {
+                // `session` is WCSession.default, the session `setupSession` activated.
+                self.handleSessionActivated(WCSession.default)
             }
         }
     }
@@ -287,7 +297,7 @@ import WatchConnectivity
     }
 
     /// Handles incoming messages from the paired iPhone when Phone is in the foreground
-    func session(_: WCSession, didReceiveMessage message: [String: Any]) {
+    nonisolated func session(_: WCSession, didReceiveMessage message: [String: Any]) {
         if WatchLogger.shared.handlePhoneMessage(message) { return }
 
         // Ack at top level — no `watchState` wrapper, no staleness check.
@@ -300,18 +310,20 @@ import WatchConnectivity
             } else {
                 WatchLogger.shared.warning(.treatments, "Phone rejected request (\(ackCodeRaw)): \(ackMessage)")
             }
+            let payload = WatchPayload(message)
             DispatchQueue.main.async {
                 self.showSyncingAnimation = false
+                self.processWatchMessage(payload.dictionary)
             }
-            processWatchMessage(message)
             return
         }
 
         // Recommended bolus is also not part of the WatchState message.
         if let recommendedBolus = message[WatchMessageKeys.recommendedBolus] as? NSNumber {
             WatchLogger.shared.debug(.bolus, "Bolus recommendation of \(recommendedBolus) U received")
+            let amount = recommendedBolus.decimalValue
             DispatchQueue.main.async {
-                self.recommendedBolus = recommendedBolus.decimalValue
+                self.recommendedBolus = amount
                 self.showBolusCalculationProgress = false
             }
             return
@@ -320,22 +332,23 @@ import WatchConnectivity
         handleIncomingWatchStatePayload(message)
     }
 
-    func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    nonisolated func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         if WatchLogger.shared.handlePhoneMessage(userInfo) { return }
         handleIncomingWatchStatePayload(userInfo)
     }
 
-    func session(_: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    nonisolated func session(_: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         handleIncomingWatchStatePayload(applicationContext)
     }
 
-    func session(_: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: (any Error)?) {
+    nonisolated func session(_: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: (any Error)?) {
         WatchLogger.shared.transferFinished(fileTransfer, error: error)
     }
 
-    private func handleIncomingWatchStatePayload(_ dictionary: [String: Any]) {
+    private nonisolated func handleIncomingWatchStatePayload(_ dictionary: [String: Any]) {
+        let payload = WatchPayload(dictionary)
         DispatchQueue.main.async {
-            self.acceptWatchStatePayload(dictionary)
+            self.acceptWatchStatePayload(payload.dictionary)
         }
     }
 
@@ -402,7 +415,7 @@ import WatchConnectivity
         .sorted { $0.date < $1.date }
     }
 
-    func session(_: WCSession, didFinish _: WCSessionUserInfoTransfer, error: (any Error)?) {
+    nonisolated func session(_: WCSession, didFinish _: WCSessionUserInfoTransfer, error: (any Error)?) {
         if let error = error {
             WatchLogger.shared.warning(.connectivity, "User info transfer to the phone failed", error: error)
         }
@@ -410,7 +423,7 @@ import WatchConnectivity
 
     /// Called when the reachability status of the paired iPhone changes
     /// Updates the local reachability status
-    func sessionReachabilityDidChange(_ session: WCSession) {
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let isReachable = session.isReachable
         DispatchQueue.main.async {
             self.handleReachabilityChange(isReachable: isReachable)
@@ -464,8 +477,11 @@ import WatchConnectivity
 
         showSyncingAnimation = true
         let timeout = DispatchWorkItem { [self] in
-            WatchLogger.shared.debug(.connectivity, "No watch state answer from the phone, syncing animation hidden")
-            endSync(hidingAnimation: pendingData.isEmpty)
+            // Only ever run by the main queue (asyncAfter below).
+            MainActor.assumeIsolated {
+                WatchLogger.shared.debug(.connectivity, "No watch state answer from the phone, syncing animation hidden")
+                endSync(hidingAnimation: pendingData.isEmpty)
+            }
         }
         syncTimeout = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.syncingAnimationTimeout, execute: timeout)
@@ -480,60 +496,58 @@ import WatchConnectivity
 
     /// Handles incoming messages that either contain an acknowledgement or fresh watchState data  (<15 min)
     private func processWatchMessage(_ message: [String: Any]) {
-        DispatchQueue.main.async {
-            // 1) Acknowledgment logic
-            if let acknowledged = message[WatchMessageKeys.acknowledged] as? Bool,
-               let ackMessage = message[WatchMessageKeys.message] as? String,
-               let ackCodeRaw = message[WatchMessageKeys.ackCode] as? String,
-               let ackCode = AcknowledgmentCode(rawValue: ackCodeRaw)
-            {
-                DispatchQueue.main.async {
-                    self.showSyncingAnimation = false
-                }
-
-                switch ackCode {
-                case .savingCarbs:
-                    self.isMealBolusCombo = true
-                    self.mealBolusStep = .savingCarbs
-                    self.showCommsAnimation = true
-                    self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: false)
-                case .enactingBolus:
-                    self.isMealBolusCombo = true
-                    self.mealBolusStep = .enactingBolus
-                    self.showCommsAnimation = true
-                    self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: false)
-                case .comboComplete:
-                    self.isMealBolusCombo = false
-                    self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
-                case .bolusNeedsOverride:
-                    self.isMealBolusCombo = false
-                    if let amount = message[WatchMessageKeys.bolus] as? NSNumber,
-                       let overriddenChecks = message[WatchMessageKeys.overriddenBolusChecks] as? [String],
-                       let issuedAt = message[WatchMessageKeys.bolusOverrideIssuedAt] as? TimeInterval
-                    {
-                        // The phone answered; the user now decides, so the no-answer timeout must not fire
-                        self.acknowledgmentTimeoutWorkItem?.cancel()
-                        self.acknowledgmentTimeoutWorkItem = nil
-                        self.showCommsAnimation = false
-                        self.pendingBolusOverride = PendingBolusOverride(
-                            amount: amount.decimalValue,
-                            reason: ackMessage,
-                            overriddenChecks: overriddenChecks,
-                            issuedAt: issuedAt
-                        )
-                    } else {
-                        self.handleAcknowledgment(success: false, message: ackMessage, isFinal: true)
-                    }
-                default:
-                    self.isMealBolusCombo = false
-                    self.handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
-                }
+        // 1) Acknowledgment logic
+        if let acknowledged = message[WatchMessageKeys.acknowledged] as? Bool,
+           let ackMessage = message[WatchMessageKeys.message] as? String,
+           let ackCodeRaw = message[WatchMessageKeys.ackCode] as? String,
+           let ackCode = AcknowledgmentCode(rawValue: ackCodeRaw)
+        {
+            DispatchQueue.main.async {
+                self.showSyncingAnimation = false
             }
 
-            // 2) Raw watchState data
-            if message[WatchMessageKeys.watchState] != nil {
-                self.acceptWatchStatePayload(message)
+            switch ackCode {
+            case .savingCarbs:
+                isMealBolusCombo = true
+                mealBolusStep = .savingCarbs
+                showCommsAnimation = true
+                handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: false)
+            case .enactingBolus:
+                isMealBolusCombo = true
+                mealBolusStep = .enactingBolus
+                showCommsAnimation = true
+                handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: false)
+            case .comboComplete:
+                isMealBolusCombo = false
+                handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
+            case .bolusNeedsOverride:
+                isMealBolusCombo = false
+                if let amount = message[WatchMessageKeys.bolus] as? NSNumber,
+                   let overriddenChecks = message[WatchMessageKeys.overriddenBolusChecks] as? [String],
+                   let issuedAt = message[WatchMessageKeys.bolusOverrideIssuedAt] as? TimeInterval
+                {
+                    // The phone answered; the user now decides, so the no-answer timeout must not fire
+                    acknowledgmentTimeoutWorkItem?.cancel()
+                    acknowledgmentTimeoutWorkItem = nil
+                    showCommsAnimation = false
+                    pendingBolusOverride = PendingBolusOverride(
+                        amount: amount.decimalValue,
+                        reason: ackMessage,
+                        overriddenChecks: overriddenChecks,
+                        issuedAt: issuedAt
+                    )
+                } else {
+                    handleAcknowledgment(success: false, message: ackMessage, isFinal: true)
+                }
+            default:
+                isMealBolusCombo = false
+                handleAcknowledgment(success: acknowledged, message: ackMessage, isFinal: true)
             }
+        }
+
+        // 2) Raw watchState data
+        if message[WatchMessageKeys.watchState] != nil {
+            acceptWatchStatePayload(message)
         }
     }
 
@@ -556,7 +570,10 @@ import WatchConnectivity
 
         // 2) Create and schedule a new finalization
         let workItem = DispatchWorkItem { [self] in
-            self.finalizePendingData()
+            // Only ever run by the main queue (asyncAfter below).
+            MainActor.assumeIsolated {
+                self.finalizePendingData()
+            }
         }
         finalizeWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
@@ -721,5 +738,18 @@ import WatchConnectivity
             forecastConeMax = forecastPayload[WatchMessageKeys.forecastConeMax] as? [Double] ?? []
             forecastLines = forecastPayload[WatchMessageKeys.forecastLines] as? [String: [Double]] ?? [:]
         }
+    }
+}
+
+/// A WatchConnectivity payload handed from the session's delegate queue to the main actor.
+///
+/// `@unchecked` because `[String: Any]` is not Sendable. WatchConnectivity only delivers
+/// property-list values (strings, numbers, dates, data, and arrays and dictionaries of those),
+/// and the dictionary is not mutated after delivery, so reading it on another thread is safe.
+struct WatchPayload: @unchecked Sendable {
+    let dictionary: [String: Any]
+
+    init(_ dictionary: [String: Any]) {
+        self.dictionary = dictionary
     }
 }
