@@ -490,4 +490,34 @@ import Testing
             #expect(GlucoseAlert(type: type).playsSound)
         }
     }
+
+    @Test("A delayed alarm uses the day/night variant of its fire time") func delayedAlarmUsesFireTimeWindow() {
+        var nightOnly = DeviceAlertSeverityConfig(severity: .critical, activeOption: .night)
+        nightOnly.soundFilename = "night.caf"
+        var dayOnly = DeviceAlertSeverityConfig(severity: .critical, activeOption: .day)
+        dayOnly.soundFilename = "day.caf"
+        let suiteName = "DeviceAlertsStoreTests.fireTime.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(try? JSONEncoder().encode([
+            DeviceAlertSeverityConfig(severity: .critical, activeOption: .always),
+            dayOnly,
+            nightOnly,
+            DeviceAlertSeverityConfig(severity: .timeSensitive, activeOption: .always),
+            DeviceAlertSeverityConfig(severity: .normal, activeOption: .always)
+        ]), forKey: "configs")
+        let store = DeviceAlertsStore(defaults: defaults, configsKey: "configs", snoozesKey: "snoozes")
+        let dayNight = GlucoseAlertConfiguration(
+            dayStart: TimeOfDay(hour: 6, minute: 0),
+            nightStart: TimeOfDay(hour: 22, minute: 0)
+        )
+        let calendar = Calendar.current
+        let armedAt = calendar.date(bySettingHour: 21, minute: 0, second: 0, of: Date())!
+        let firesAt = armedAt.addingTimeInterval(2 * 60 * 60) // 23:00, inside the night window
+
+        let atArm = BaseTrioAlertManager.tierConfig(for: .critical, firingAt: armedAt, store: store, dayNight: dayNight)
+        let atFire = BaseTrioAlertManager.tierConfig(for: .critical, firingAt: firesAt, store: store, dayNight: dayNight)
+        #expect(atArm?.soundFilename == "day.caf")
+        #expect(atFire?.soundFilename == "night.caf")
+    }
 }

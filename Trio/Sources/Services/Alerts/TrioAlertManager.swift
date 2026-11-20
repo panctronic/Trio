@@ -244,8 +244,12 @@ final class BaseTrioAlertManager: TrioAlertManager, Injectable {
                 return
             }
             // nil = every variant in the tier disabled, user opted out.
-            let isNight = GlucoseAlertsStore.shared.configuration.isNight(at: now)
-            guard let config = DeviceAlertsStore.shared.config(for: tier, at: now, isNight: isNight) else {
+            guard let config = Self.tierConfig(
+                for: tier,
+                firingAt: fireDate,
+                store: DeviceAlertsStore.shared,
+                dayNight: GlucoseAlertsStore.shared.configuration
+            ) else {
                 debug(.alerts, "Alert \(alert.identifier.value) dropped, all variants in tier \(tier) disabled")
                 return
             }
@@ -288,6 +292,19 @@ final class BaseTrioAlertManager: TrioAlertManager, Injectable {
         if case .immediate = effective.trigger {
             playCriticalAudioFallbackIfNeeded(effective, muted: muted)
         }
+    }
+
+    /// The tier config that applies when the alert fires. The tone and level are baked into the
+    /// notification when it is scheduled, so a delayed alarm (e.g. the Not Looping ladder, armed up
+    /// to two hours ahead) must use the day or night variant of its fire time, not of the time it
+    /// was armed. Repeating alerts use their first fire time.
+    static func tierConfig(
+        for tier: DeviceAlertSeverity,
+        firingAt fireDate: Date,
+        store: DeviceAlertsStore,
+        dayNight: GlucoseAlertConfiguration
+    ) -> DeviceAlertSeverityConfig? {
+        store.config(for: tier, at: fireDate, isNight: dayNight.isNight(at: fireDate))
     }
 
     /// Overlays the user's Device Alarms tier config onto a catalog-known
