@@ -76,7 +76,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         case .glucose: await performUploadGlucose()
         case .deviceStatus:
             do { try await performUploadDeviceStatus() }
-            catch { warning(.nightscout, "Device status upload failed", error: error) }
+            catch {
+                warning(.nightscout, "Device status upload failed", error: error)
+                syncStatusTracker.recordFailure(.nightscout, .deviceStatus, error: error)
+            }
         case .profiles: await performUploadTherapyProfiles()
         }
     }

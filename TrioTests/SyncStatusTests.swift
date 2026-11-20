@@ -221,6 +221,28 @@ private final class SyncTestClock: Sendable {
         #expect(classify(backlog: backlog(oldestAge: nil, deletions: 1)) == .behind)
     }
 
+    @Test("Device status counts as behind when the loop runs but nothing reached Nightscout") func deviceStatusOverdue() {
+        var record = SyncDestinationRecord()
+        let looping = SyncBacklog(latestDetermination: now.addingTimeInterval(-5 * 60))
+
+        // Never uploaded while looping.
+        #expect(classify(record: record, backlog: looping) == .behind)
+
+        record.lastSuccess[.deviceStatus] = now.addingTimeInterval(-10 * 60)
+        #expect(classify(record: record, backlog: looping) == .ok)
+
+        record.lastSuccess[.deviceStatus] = now.addingTimeInterval(-(SyncStatusRules.behindAfter + 60))
+        #expect(classify(record: record, backlog: looping) == .behind)
+
+        // Loop not running: no device status expected.
+        let notLooping = SyncBacklog(latestDetermination: now.addingTimeInterval(-3 * hour))
+        #expect(classify(record: record, backlog: notLooping) == .ok)
+        #expect(classify(record: record, backlog: SyncBacklog()) == .ok)
+
+        // Only Nightscout receives device status.
+        #expect(classify(.tidepool, record: SyncDestinationRecord(), backlog: looping) == .ok)
+    }
+
     @Test("Nightscout records within a day of the 7-day window end are near the limit") func nightscoutWindow() {
         let near = now.addingTimeInterval(-(6 * day + hour))
         let notNear = now.addingTimeInterval(-(5 * day))
