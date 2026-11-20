@@ -108,6 +108,9 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     private var lastEnactedDetermination: Determination?
     private var lastSuggestedDetermination: Determination?
 
+    /// Deletions Nightscout did not accept, retried on the pump history upload pass.
+    private var pendingDeletions: PendingDeletionQueue!
+
     /// Bag for Combine subscriptions owned by this manager.
     var subscriptions = Set<AnyCancellable>()
 
@@ -271,6 +274,11 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
 
     init(resolver: Resolver) {
         injectServices(resolver)
+        pendingDeletions = PendingDeletionQueue(
+            storage: storage,
+            file: OpenAPS.Nightscout.pendingDeletionsNightscout,
+            category: .nightscout
+        )
 
         uploadSerializer = NightscoutUploadSerializer { [weak self] pipeline in
             await self?.performUpload(for: pipeline)
@@ -448,7 +456,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             debug(.nightscout, "Carb entry deleted")
             return true
         } catch {
-            warning(.nightscout, "Carb entry deletion failed", error: error)
+            warning(.nightscout, "Carb entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .carbs, id: id))
             return false
         }
     }
@@ -460,7 +469,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             try await nightscout.deleteInsulin(withId: id)
             debug(.nightscout, "Insulin entry deleted")
         } catch {
-            warning(.nightscout, "Insulin entry deletion failed", error: error)
+            warning(.nightscout, "Insulin entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .insulin, id: id))
         }
     }
 
@@ -471,7 +481,33 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             try await nightscout.deleteGlucose(withId: id, withDate: date)
             debug(.nightscout, "Glucose entry deleted")
         } catch {
-            warning(.nightscout, "Glucose entry deletion failed", error: error)
+            warning(.nightscout, "Glucose entry deletion failed, will retry", error: error)
+            await pendingDeletions.enqueue(PendingRemoteDeletion(kind: .glucose, id: id, date: date))
+        }
+    }
+
+    /// Retries deletions that failed earlier, so a record deleted in Trio doesn't stay visible to followers.
+    private func retryPendingDeletions() async {
+        guard let nightscout = nightscoutAPI, isUploadEnabled, isNetworkReachable else { return }
+
+        await pendingDeletions.retryDue { deletion in
+            do {
+                switch deletion.kind {
+                case .carbs:
+                    try await nightscout.deleteCarbs(withId: deletion.id)
+                case .insulin:
+                    try await nightscout.deleteInsulin(withId: deletion.id)
+                case .glucose:
+                    guard let date = deletion.date else { return true }
+                    try await nightscout.deleteGlucose(withId: deletion.id, withDate: date)
+                case .healthSample:
+                    return true
+                }
+                return true
+            } catch {
+                warning(.nightscout, "Retried \(deletion.kind.rawValue) deletion \(deletion.id) failed", error: error)
+                return false
+            }
         }
     }
 
@@ -901,6 +937,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func performUploadPumpHistory() async {
+        await retryPendingDeletions()
         do {
             try await uploadPumpHistory(pumpHistoryStorage.getPumpHistoryNotYetUploadedToNightscout())
         } catch {
