@@ -121,3 +121,31 @@ import Testing
         #expect(result.isEmpty)
     }
 }
+
+@Suite("Trio Alerts: launch quiet window") struct LaunchQuietWindowGateTests {
+    @Test("Work arriving in the quiet window runs once it ends, coalesced per key") func defersAndCoalesces() async {
+        let queue = DispatchQueue(label: "LaunchQuietWindowGateTests")
+        let gate = LaunchQuietWindowGate(endsAt: Date().addingTimeInterval(0.3), queue: queue)
+        let log = Log()
+
+        queue.sync {
+            gate.runOrDefer(key: "reading") { log.append("reading-1") }
+            gate.runOrDefer(key: "reading") { log.append("reading-2") }
+            gate.runOrDefer(key: "determination") { log.append("determination") }
+        }
+        #expect(log.entries.isEmpty, "Nothing runs inside the quiet window")
+
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        #expect(log.entries.sorted() == ["determination", "reading-2"], "Latest work per key runs once after the window")
+
+        queue.sync { gate.runOrDefer(key: "reading") { log.append("reading-3") } }
+        #expect(log.entries.last == "reading-3", "After the window work runs immediately")
+    }
+
+    private final class Log: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String] = []
+        var entries: [String] { lock.withLock { storage } }
+        func append(_ entry: String) { lock.withLock { storage.append(entry) } }
+    }
+}

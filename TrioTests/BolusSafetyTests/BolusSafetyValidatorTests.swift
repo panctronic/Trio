@@ -70,6 +70,26 @@ import Testing
         #expect(BolusSafetyEvaluator.recentBolusWindowStart(now: now, iobDate: nil) == now.addingTimeInterval(-6 * 60))
     }
 
+    @Test("Confirming past unavailable IOB still checks max IOB against the stale estimate") func staleEstimateChecksMaxIOB() {
+        let inputs = BolusSafetyInputs(
+            maxBolus: 10,
+            maxIOB: 5,
+            currentIOB: nil,
+            totalRecentBolus: 0,
+            staleIOBEstimate: 4
+        )
+        #expect(BolusSafetyEvaluator.evaluate(bolusAmount: 2, inputs: inputs, overriding: [.iobAvailable])
+            == .rejected(.exceedsMaxIOB(currentIOB: 4, maxIOB: 5)))
+        #expect(BolusSafetyEvaluator.evaluate(bolusAmount: 1, inputs: inputs, overriding: [.iobAvailable]) == .allowed)
+        // Without the confirmation the missing IOB is reported first.
+        #expect(BolusSafetyEvaluator.evaluate(bolusAmount: 1, inputs: inputs) == .rejected(.iobUnavailable))
+    }
+
+    @Test("With no IOB sample at all, confirming past it skips max IOB") func noSampleSkipsMaxIOB() {
+        let inputs = BolusSafetyInputs(maxBolus: 10, maxIOB: 5, currentIOB: nil, totalRecentBolus: 0)
+        #expect(BolusSafetyEvaluator.evaluate(bolusAmount: 8, inputs: inputs, overriding: [.iobAvailable]) == .allowed)
+    }
+
     @Test("Stale IOB blocks the bolus") func testStaleIOBRejects() {
         let now = Date()
         let inputs = BolusSafetyInputs(

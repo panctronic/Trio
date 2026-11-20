@@ -31,6 +31,8 @@ struct AcknowledgementPendingView: View {
                     state: state,
                     pendingBolusOverride: pendingBolusOverride
                 )
+                // A new request to confirm gets a fresh view, and so a fresh send latch
+                .id(pendingBolusOverride.issuedAt)
             } else {
                 VStack {
                     if state.isMealBolusCombo {
@@ -86,6 +88,8 @@ private struct BolusOverrideConfirmationView: View {
     let pendingBolusOverride: PendingBolusOverride
 
     @State private var confirmationProgress: Double = 0
+    /// Set on the first full confirmation: turning the crown 1.0 → 0.95 → 1.0 must not send the bolus twice
+    @State private var hasSent = false
     @FocusState private var isCrownFocused: Bool
     @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverEnabled
 
@@ -157,6 +161,8 @@ private struct BolusOverrideConfirmationView: View {
         }
         .onChange(of: confirmationProgress) { _, newValue in
             if newValue >= 1.0 {
+                guard !hasSent else { return }
+                hasSent = true
                 WKInterfaceDevice.current().play(.success)
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

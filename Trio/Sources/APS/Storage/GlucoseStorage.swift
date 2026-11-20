@@ -358,7 +358,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         // Only CGM readings; a manual entry would filter out the next CGM reading
         fr.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             NSPredicate.predicateForOneDayAgo,
-            NSPredicate.cgmGlucose
+            NSPredicate.cgmGlucose,
+            NSPredicate.glucoseNotInFuture
         ])
         fr.propertiesToFetch = ["date"]
         fr.fetchLimit = 1
@@ -390,7 +391,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         // CGM plugins drop readings older than this, so manual entries must not count
         fetchRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             NSPredicate.predicateForOneDayAgo,
-            NSPredicate.cgmGlucose
+            NSPredicate.cgmGlucose,
+            NSPredicate.glucoseNotInFuture
         ])
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \GlucoseStored.date, ascending: false)]
         fetchRequest.fetchLimit = 1
@@ -429,7 +431,10 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
     }
 
     func fetchLatestGlucose(context: NSManagedObjectContext) throws -> GlucoseStored? {
-        let predicate = NSPredicate.predicateFor20MinAgo
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate.predicateFor20MinAgo,
+            NSPredicate.glucoseNotInFuture
+        ])
         return try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: GlucoseStored.self,
             onContext: context,
@@ -452,7 +457,10 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
         return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
-            predicate: NSPredicate(format: "date >= %@", cutoff as NSDate),
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "date >= %@", cutoff as NSDate),
+                NSPredicate.glucoseNotInFuture
+            ]),
             key: "date",
             ascending: false,
             batchSize: 48

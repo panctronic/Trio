@@ -11,18 +11,22 @@ import HealthKit
 /// only if the service accepted something else in the same run, which shows that it takes data at
 /// all, so a server that refuses everything doesn't make records get dropped. Any other error, such
 /// as no network or an expired login, ends the run and is rethrown, and the batch is retried later.
+///
+/// Returns what was given up, if anything, so the caller can report the pass as failed on the Sync
+/// Status screen even though the rest was uploaded.
 enum RejectionIsolatingUpload {
     /// Refused single records tolerated before the run ends when nothing has been accepted yet.
     static let maxRejectedBeforeAnyAccepted = 3
 
-    static func run<Item>(
+    @discardableResult static func run<Item>(
         _ items: [Item],
+        label: String,
         chunkSize: Int,
         isRejection: (Error) -> Bool,
         send: ([Item]) async throws -> Void,
         accepted: ([Item]) async -> Void,
         rejected: ([Item], Error) async -> Void
-    ) async throws {
+    ) async throws -> RefusedRecordsError? {
         var acceptedAny = false
         var refused: [Item] = []
         var lastRejection: Error?
@@ -50,12 +54,32 @@ enum RejectionIsolatingUpload {
             try await sendIsolating(chunk)
         }
 
-        guard let lastRejection, refused.isNotEmpty else { return }
-        if acceptedAny {
-            await rejected(refused, lastRejection)
-        } else {
-            throw lastRejection
-        }
+        guard let lastRejection, refused.isNotEmpty else { return nil }
+        guard acceptedAny else { throw lastRejection }
+        await rejected(refused, lastRejection)
+        return RefusedRecordsError(count: refused.count, label: label, underlying: lastRejection)
+    }
+}
+
+/// Carries the refused records out of a `@Sendable` upload closure.
+final class RefusedRecordsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: RefusedRecordsError?
+
+    var value: RefusedRecordsError? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
+/// Records a service refused and that were given up.
+struct RefusedRecordsError: LocalizedError {
+    let count: Int
+    let label: String
+    let underlying: Error
+
+    var errorDescription: String? {
+        "Refused \(count) \(label), not retrying them: \(underlying.localizedDescription)"
     }
 }
 
@@ -63,16 +87,18 @@ extension RejectionIsolatingUpload {
     /// Sends `items` as one request. If the service rejects it as invalid, sends it in halves instead and
     /// drops the refused items with a log line. Throws only when nothing could be sent, so on success the
     /// caller marks all `items` as handled. Nothing is sent for an empty list.
-    static func sendDroppingRejected<Item>(
+    /// - Returns: what was given up, if anything, to report the pass as failed.
+    @discardableResult static func sendDroppingRejected<Item>(
         _ items: [Item],
         label: String,
         category: Logger.Category,
         isRejection: (Error) -> Bool,
         send: ([Item]) async throws -> Void
-    ) async throws {
-        guard items.isNotEmpty else { return }
-        try await run(
+    ) async throws -> RefusedRecordsError? {
+        guard items.isNotEmpty else { return nil }
+        return try await run(
             items,
+            label: label,
             chunkSize: items.count,
             isRejection: isRejection,
             send: send,

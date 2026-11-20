@@ -76,7 +76,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         case .glucose: await performUploadGlucose()
         case .deviceStatus:
             do { try await performUploadDeviceStatus() }
-            catch { warning(.nightscout, "Device status upload failed", error: error) }
+            catch {
+                warning(.nightscout, "Device status upload failed", error: error)
+                syncStatusTracker.recordFailure(.nightscout, .deviceStatus, error: error)
+            }
         case .profiles: await performUploadTherapyProfiles()
         }
     }
@@ -959,9 +962,12 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func performUploadCarbs() async {
+        // One pass, one Sync Status record: a failed part is not hidden by the other part.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .nightscout, .carbs) }
         do {
-            try await uploadCarbs(carbsStorage.getCarbsNotYetUploadedToNightscout())
-            try await uploadCarbs(carbsStorage.getFPUsNotYetUploadedToNightscout())
+            outcome.merge(try await uploadCarbs(carbsStorage.getCarbsNotYetUploadedToNightscout()))
+            outcome.merge(try await uploadCarbs(carbsStorage.getFPUsNotYetUploadedToNightscout()))
         } catch {
             warning(.nightscout, "Failed to load pending carbs for upload", error: error)
         }
@@ -972,9 +978,12 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func performUploadOverrides() async {
+        // One pass, one Sync Status record: a failed part is not hidden by the other part.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .nightscout, .overrides) }
         do {
-            try await uploadOverrides(overridesStorage.getOverridesNotYetUploadedToNightscout())
-            try await uploadOverrideRuns(overridesStorage.getOverrideRunsNotYetUploadedToNightscout())
+            outcome.merge(try await uploadOverrides(overridesStorage.getOverridesNotYetUploadedToNightscout()))
+            outcome.merge(try await uploadOverrideRuns(overridesStorage.getOverrideRunsNotYetUploadedToNightscout()))
         } catch {
             warning(.nightscout, "Failed to load pending overrides for upload", error: error)
         }
@@ -985,9 +994,12 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     private func performUploadTempTargets() async {
+        // One pass, one Sync Status record: a failed part is not hidden by the other part.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .nightscout, .tempTargets) }
         do {
-            try await uploadTempTargets(await tempTargetsStorage.getTempTargetsNotYetUploadedToNightscout())
-            try await uploadTempTargetRuns(await tempTargetsStorage.getTempTargetRunsNotYetUploadedToNightscout())
+            outcome.merge(try await uploadTempTargets(await tempTargetsStorage.getTempTargetsNotYetUploadedToNightscout()))
+            outcome.merge(try await uploadTempTargetRuns(await tempTargetsStorage.getTempTargetRunsNotYetUploadedToNightscout()))
         } catch {
             warning(.nightscout, "Failed to load pending temp targets for upload", error: error)
         }
@@ -1001,8 +1013,9 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             // Upload in batches of 100, marking each batch as soon as it is accepted so a later
             // failure doesn't send the earlier batches again
-            try await RejectionIsolatingUpload.run(
+            let refused = try await RejectionIsolatingUpload.run(
                 glucose,
+                label: "glucose values",
                 chunkSize: 100,
                 isRejection: UploadRejection.isNightscoutRejection,
                 send: { try await nightscout.uploadGlucose($0) },
@@ -1014,7 +1027,11 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             )
 
             info(.nightscout, "Uploaded \(glucose.count) glucose values")
-            syncStatusTracker.recordSuccess(.nightscout, .glucose)
+            if let refused {
+                syncStatusTracker.recordFailure(.nightscout, .glucose, error: refused)
+            } else {
+                syncStatusTracker.recordSuccess(.nightscout, .glucose)
+            }
         } catch {
             warning(.nightscout, "Upload of \(glucose.count) glucose values failed", error: error)
             syncStatusTracker.recordFailure(.nightscout, .glucose, error: error)
@@ -1069,8 +1086,9 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
 
         do {
             var response = Data()
-            try await RejectionIsolatingUpload.run(
+            let refused = try await RejectionIsolatingUpload.run(
                 treatments,
+                label: "pump events",
                 chunkSize: 100,
                 isRejection: UploadRejection.isNightscoutRejection,
                 send: { response = try await site.api.uploadTreatments($0) },
@@ -1092,7 +1110,11 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             )
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
-            syncStatusTracker.recordSuccess(.nightscout, .treatments)
+            if let refused {
+                syncStatusTracker.recordFailure(.nightscout, .treatments, error: refused)
+            } else {
+                syncStatusTracker.recordSuccess(.nightscout, .treatments)
+            }
         } catch {
             warning(.nightscout, "Upload of \(treatments.count) pump events failed", error: error)
             syncStatusTracker.recordFailure(.nightscout, .treatments, error: error)
@@ -1155,15 +1177,17 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
     }
 
-    private func uploadCarbs(_ treatments: [NightscoutTreatment]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult private func uploadCarbs(_ treatments: [NightscoutTreatment]) async -> SyncPassOutcome {
         guard !treatments.isEmpty, let site = nightscoutSite, isUploadEnabled else {
-            return
+            return SyncPassOutcome()
         }
 
         do {
             var response = Data()
-            try await RejectionIsolatingUpload.run(
+            let refused = try await RejectionIsolatingUpload.run(
                 treatments,
+                label: "carb entries",
                 chunkSize: 100,
                 isRejection: UploadRejection.isNightscoutRejection,
                 send: { response = try await site.api.uploadTreatments($0) },
@@ -1185,10 +1209,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             )
 
             info(.nightscout, "Uploaded \(treatments.count) carb entries")
-            syncStatusTracker.recordSuccess(.nightscout, .carbs)
+            return refused.map { .failure($0) } ?? .success
         } catch {
             warning(.nightscout, "Upload of \(treatments.count) carb entries failed", error: error)
-            syncStatusTracker.recordFailure(.nightscout, .carbs, error: error)
+            return .failure(error)
         }
     }
 
@@ -1230,9 +1254,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
     }
 
-    private func uploadOverrides(_ overrides: [NightscoutExercise]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult private func uploadOverrides(_ overrides: [NightscoutExercise]) async -> SyncPassOutcome {
         guard !overrides.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
-            return
+            return SyncPassOutcome()
         }
 
         do {
@@ -1262,10 +1287,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateOverridesAsUploaded(processedOverrides)
 
             info(.nightscout, "Uploaded \(processedOverrides.count) overrides")
-            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
+            return processedOverrides.isEmpty ? SyncPassOutcome() : .success
         } catch {
             warning(.nightscout, "Upload of \(overrides.count) overrides failed", error: error)
-            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
+            return .failure(error)
         }
     }
 
@@ -1291,9 +1316,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
     }
 
-    private func uploadOverrideRuns(_ overrideRuns: [NightscoutExercise]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult private func uploadOverrideRuns(_ overrideRuns: [NightscoutExercise]) async -> SyncPassOutcome {
         guard !overrideRuns.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
-            return
+            return SyncPassOutcome()
         }
 
         do {
@@ -1320,10 +1346,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateOverrideRunsAsUploaded(overrideRuns)
 
             info(.nightscout, "Uploaded \(processedOverrideRuns.count) override runs")
-            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
+            return processedOverrideRuns.isEmpty ? SyncPassOutcome() : .success
         } catch {
             warning(.nightscout, "Upload of \(overrideRuns.count) override runs failed", error: error)
-            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
+            return .failure(error)
         }
     }
 
@@ -1349,9 +1375,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
     }
 
-    private func uploadTempTargets(_ tempTargets: [NightscoutTreatment]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult private func uploadTempTargets(_ tempTargets: [NightscoutTreatment]) async -> SyncPassOutcome {
         guard !tempTargets.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
-            return
+            return SyncPassOutcome()
         }
 
         do {
@@ -1363,10 +1390,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateTempTargetsAsUploaded(tempTargets)
 
             info(.nightscout, "Uploaded \(tempTargets.count) temp targets")
-            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
+            return .success
         } catch {
             warning(.nightscout, "Upload of \(tempTargets.count) temp targets failed", error: error)
-            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
+            return .failure(error)
         }
     }
 
@@ -1392,9 +1419,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
     }
 
-    private func uploadTempTargetRuns(_ tempTargetRuns: [NightscoutTreatment]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult private func uploadTempTargetRuns(_ tempTargetRuns: [NightscoutTreatment]) async -> SyncPassOutcome {
         guard !tempTargetRuns.isEmpty, let nightscout = nightscoutAPI, isUploadEnabled else {
-            return
+            return SyncPassOutcome()
         }
 
         do {
@@ -1406,10 +1434,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             await updateTempTargetRunsAsUploaded(tempTargetRuns)
 
             info(.nightscout, "Uploaded \(tempTargetRuns.count) temp target runs")
-            syncStatusTracker.recordSuccess(.nightscout, .adjustments)
+            return .success
         } catch {
             warning(.nightscout, "Upload of \(tempTargetRuns.count) temp target runs failed", error: error)
-            syncStatusTracker.recordFailure(.nightscout, .adjustments, error: error)
+            return .failure(error)
         }
     }
 

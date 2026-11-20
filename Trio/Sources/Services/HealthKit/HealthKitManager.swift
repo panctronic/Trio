@@ -120,6 +120,12 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
         return controller
     }()
 
+    /// Shown on the Sync Status screen when Apple Health upload is on but writing a type is not allowed;
+    /// the rows then wait without a write ever being attempted.
+    static var writePermissionMissingMessage: String {
+        String(localized: "Trio is not allowed to write this data to Apple Health. Check the permissions in the Health app.")
+    }
+
     var isAvailableOnCurrentDevice: Bool {
         HKHealthStore.isHealthDataAvailable()
     }
@@ -200,23 +206,29 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
 
     func uploadGlucose() async {
         await retryPendingDeletions()
+        // One Sync Status record per pass: a failed part is not hidden by the other part.
+        var outcome = SyncPassOutcome()
+        defer { syncStatusTracker.record(outcome, .appleHealth, .glucose) }
         do {
             let glucose = try await glucoseStorage.getGlucoseNotYetUploadedToHealth()
-            await uploadGlucose(glucose)
+            outcome.merge(await uploadGlucose(glucose))
 
             let manualGlucose = try await glucoseStorage.getManualGlucoseNotYetUploadedToHealth()
-            await uploadGlucose(manualGlucose)
+            outcome.merge(await uploadGlucose(manualGlucose))
         } catch {
             warning(.healthKit, "Fetching glucose for Apple Health upload failed", error: error)
         }
     }
 
-    func uploadGlucose(_ glucose: [BloodGlucose]) async {
+    /// - Returns: the pass outcome for the Sync Status screen; empty when nothing was sent.
+    @discardableResult func uploadGlucose(_ glucose: [BloodGlucose]) async -> SyncPassOutcome {
         guard settingsManager.settings.useAppleHealth,
               let sampleType = AppleHealthConfig.healthBGObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType),
               glucose.isNotEmpty
-        else { return }
+        else { return SyncPassOutcome() }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType) else {
+            return .failure(message: Self.writePermissionMissingMessage)
+        }
 
         do {
             // Create HealthKit samples from all the passed glucose values
@@ -240,27 +252,32 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             guard glucoseSamples.isNotEmpty else {
                 // nothing in these rows can be written; mark them so they don't block the queue
                 debug(.healthKit, "No glucose samples to upload")
+                // nothing was sent, so this counts as neither success nor failure
                 await updateGlucoseAsUploaded(glucose)
-                return
+                return SyncPassOutcome()
             }
 
             // Attempt to save the blood glucose samples to Apple Health
-            try await saveDroppingRejected(glucoseSamples, label: "glucose samples")
+            let refused = try await saveDroppingRejected(glucoseSamples, label: "glucose samples")
             debug(.healthKit, "Uploaded \(glucoseSamples.count) glucose samples to Apple Health")
-            syncStatusTracker.recordSuccess(.appleHealth, .glucose)
 
             // After successful upload, update the isUploadedToHealth flag in Core Data
             await updateGlucoseAsUploaded(glucose)
+            return refused.map { .failure($0) } ?? .success
 
         } catch {
             warning(.healthKit, "Uploading glucose samples to Apple Health failed", error: error)
-            syncStatusTracker.recordFailure(.appleHealth, .glucose, error: error)
+            return .failure(error)
         }
     }
 
     /// Saves `samples`; if Apple Health refuses the batch as invalid, saves it in halves and drops the
     /// refused samples with a log line, so one bad sample can't block the rows queued behind it.
-    private func saveDroppingRejected(_ samples: [HKQuantitySample], label: String) async throws {
+    /// - Returns: the samples given up, if any, so the pass is reported as failed.
+    @discardableResult private func saveDroppingRejected(
+        _ samples: [HKQuantitySample],
+        label: String
+    ) async throws -> RefusedRecordsError? {
         try await RejectionIsolatingUpload.sendDroppingRejected(
             samples, label: label, category: .healthKit, isRejection: UploadRejection.isAppleHealthRejection
         ) { try await self.healthKitStore.save($0) }
@@ -304,9 +321,12 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
               let carbSampleType = AppleHealthConfig.healthCarbObject,
               let fatSampleType = AppleHealthConfig.healthFatObject,
               let proteinSampleType = AppleHealthConfig.healthProteinObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: carbSampleType),
               carbs.isNotEmpty
         else { return }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: carbSampleType) else {
+            syncStatusTracker.recordFailure(.appleHealth, .carbs, message: Self.writePermissionMissingMessage)
+            return
+        }
 
         do {
             var samples: [HKQuantitySample] = []
@@ -375,9 +395,13 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
                 return
             }
 
-            try await saveDroppingRejected(samples, label: "carb samples")
+            let refused = try await saveDroppingRejected(samples, label: "carb samples")
             debug(.healthKit, "Uploaded \(samples.count) carb samples to Apple Health")
-            syncStatusTracker.recordSuccess(.appleHealth, .carbs)
+            if let refused {
+                syncStatusTracker.recordFailure(.appleHealth, .carbs, error: refused)
+            } else {
+                syncStatusTracker.recordSuccess(.appleHealth, .carbs)
+            }
 
             // After successful upload, update the isUploadedToHealth flag in Core Data
             await updateCarbsAsUploaded(carbs)
@@ -424,8 +448,11 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
     func uploadInsulin(_ insulinEvents: [PumpHistoryEvent]) async {
         guard settingsManager.settings.useAppleHealth,
               let sampleType = AppleHealthConfig.healthInsulinObject,
-              checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType),
               insulinEvents.isNotEmpty else { return }
+        guard checkWriteToHealthPermissions(objectTypeToHealthStore: sampleType) else {
+            syncStatusTracker.recordFailure(.appleHealth, .treatments, message: Self.writePermissionMissingMessage)
+            return
+        }
 
         do {
             let context = CoreDataStack.shared.newTaskContext()
@@ -502,9 +529,13 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
                     return
                 }
 
-                try await saveDroppingRejected(insulinSamples, label: "insulin samples")
+                let refused = try await saveDroppingRejected(insulinSamples, label: "insulin samples")
                 debug(.healthKit, "Uploaded \(insulinSamples.count) insulin samples to Apple Health")
-                syncStatusTracker.recordSuccess(.appleHealth, .treatments)
+                if let refused {
+                    syncStatusTracker.recordFailure(.appleHealth, .treatments, error: refused)
+                } else {
+                    syncStatusTracker.recordSuccess(.appleHealth, .treatments)
+                }
                 await updateInsulinAsUploaded(insulinEvents)
             } catch {
                 warning(.healthKit, "Uploading insulin samples to Apple Health failed", error: error)

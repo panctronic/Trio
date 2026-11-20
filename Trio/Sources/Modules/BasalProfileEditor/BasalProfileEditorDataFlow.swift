@@ -29,4 +29,6 @@ protocol BasalProfileEditorProvider: Provider {
     var profile: [BasalProfileEntry] { get }
     var supportedBasalRates: [Decimal]? { get }
     func saveProfile(_ profile: [BasalProfileEntry]) -> AnyPublisher<Void, Error>
+    /// Stores the schedule as the live basal settings without sending it to the pump.
+    func storeProfile(_ profile: [BasalProfileEntry])
 }

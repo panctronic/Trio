@@ -51,6 +51,14 @@ enum DynamicISF {
             return nil
         }
 
+        if let currentMinTarget = profile.dynamicIsfExerciseCutoffTarget(trioCustomOrefVariables: trioCustomOrefVariables) {
+            debug(
+                .algorithm,
+                "Dynamic ISF temporarily off due to a high temp target/exercising. Current min target: \(currentMinTarget)"
+            )
+            return nil
+        }
+
         guard preferences.dynamicIsfState(profile: profile, trioCustomOrefVariables: trioCustomOrefVariables) != .off else {
             return nil
         }
@@ -147,9 +155,46 @@ enum DynamicIsfState {
     case logrithmic
 }
 
+extension Profile {
+    /// The lowest target at which an exercise setting turns Dynamic ISF off (118 mg/dL, about 6.5 mmol/L).
+    static let dynamicIsfExerciseCutoff: Decimal = 118
+
+    /// Returns the current minimum target when Dynamic ISF must be turned off because an exercise
+    /// setting is enabled and that target is at or above `dynamicIsfExerciseCutoff`, otherwise `nil`.
+    ///
+    /// Mirrors `determine-basal.js`:
+    /// ```
+    /// if (profile.high_temptarget_raises_sensitivity || profile.exercise_mode) { exerciseSetting = true; }
+    /// if (currentMinTarget >= 118 && exerciseSetting) { dynISFenabled = false; }
+    /// ```
+    /// `currentMinTarget` is the JS `profileTarget`: the temp target when one is set (it is already
+    /// folded into `min_bg`), otherwise the override target, otherwise the scheduled `min_bg`. That is
+    /// exactly what `profileTarget(trioCustomOrefVariables:)` returns, so a high override target turns
+    /// Dynamic ISF off as well. The JS profile always resets `exercise_mode` to its default (false), so
+    /// `high_temptarget_raises_sensitivity` is the only exercise setting that can be on here.
+    ///
+    /// With Dynamic ISF off, basal is scaled by the temp-target sensitivity ratio
+    /// (`current_basal * overrideFactor * sensitivityRatio`) instead of being left unreduced or
+    /// scaled up by the TDD ratio.
+    func dynamicIsfExerciseCutoffTarget(trioCustomOrefVariables: TrioCustomOrefVariables) -> Decimal? {
+        guard highTemptargetRaisesSensitivity,
+              let currentMinTarget = profileTarget(trioCustomOrefVariables: trioCustomOrefVariables),
+              currentMinTarget >= Profile.dynamicIsfExerciseCutoff
+        else {
+            return nil
+        }
+        return currentMinTarget
+    }
+}
+
 extension Preferences {
-    func dynamicIsfState(profile: Profile, trioCustomOrefVariables _: TrioCustomOrefVariables) -> DynamicIsfState {
+    func dynamicIsfState(profile: Profile, trioCustomOrefVariables: TrioCustomOrefVariables) -> DynamicIsfState {
         guard useNewFormula else { return .off }
+
+        // Turn off when an exercise setting is on and the current min target is high
+        if profile.dynamicIsfExerciseCutoffTarget(trioCustomOrefVariables: trioCustomOrefVariables) != nil {
+            return .off
+        }
 
         // Turn off when autosens.min = autosens.max
         // BUG: This check matches the JS logic but there should

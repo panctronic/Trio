@@ -165,7 +165,8 @@ extension BasalProfileEditor {
                         writesBasalSchedule: true,
                         proposed: liveBase.replacing(basalProfile: profile)
                     ) {
-                        for try await _ in provider.saveProfile(profile).values {}
+                        // The profile manager sends the schedule to the pump; only the settings are stored here
+                        provider.storeProfile(profile)
                     }
                     info(.settings, "Basal profile saved with \(profile.count) entries")
                     initialItems = items.map { Item(rateIndex: $0.rateIndex, timeIndex: $0.timeIndex) }

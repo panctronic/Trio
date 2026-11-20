@@ -296,6 +296,9 @@ enum DosingEngine {
             }
 
             let worstCaseInsulinRequired = glucoseUndershoot / adjustedSensitivity
+            // Evaluates as (60 * worstCaseInsulinRequired / currentBasal) * overrideFactor, the same
+            // precedence as the JS `60*worstCaseInsulinReq / profile.current_basal * overrideFactor`.
+            // Reviewed and kept identical to oref for parity; do not "fix" it here alone.
             var durationRequired = (60 * worstCaseInsulinRequired / currentBasal * overrideFactor).jsRounded()
             durationRequired = (durationRequired / 30).jsRounded() * 30
             durationRequired = max(30, min(120, durationRequired))
@@ -478,6 +481,9 @@ enum DosingEngine {
                 }
                 let glucoseUndershoot = targetGlucose - naiveEventualGlucose
                 let worstCaseInsulinRequired = glucoseUndershoot / adjustedSensitivity
+                // Evaluates as (60 * worstCaseInsulinRequired / currentBasal) * overrideFactor, the same
+                // precedence as the JS `60*worstCaseInsulinReq / profile.current_basal * overrideFactor`.
+                // Reviewed and kept identical to oref for parity; do not "fix" it here alone.
                 var durationRequired = (60 * worstCaseInsulinRequired / currentBasal * overrideFactor).jsRounded()
 
                 if durationRequired < 0 {
@@ -783,6 +789,9 @@ enum DosingEngine {
 
         let worstCaseInsulinRequired = (targetGlucose - (naiveEventualGlucose + minIOBForecastedGlucose) / 2) /
             adjustedSensitivity
+        // Evaluates as (60 * worstCaseInsulinRequired / currentBasal) * overrideFactor, the same
+        // precedence as the JS `60*worstCaseInsulinReq / profile.current_basal * overrideFactor`.
+        // Reviewed and kept identical to oref for parity; do not "fix" it here alone.
         var durationRequired = (60 * worstCaseInsulinRequired / currentBasal * trioCustomOrefVariables.overrideFactor())
             .jsRounded()
 

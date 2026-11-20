@@ -8,6 +8,9 @@ struct SyncBacklog: Equatable, Sendable {
     /// Remote deletions that failed and wait in `PendingDeletionQueue`.
     var pendingDeletions: Int = 0
     var oldestPendingDeletion: Date?
+    /// Nightscout only: when the loop last made a determination. Each one should be followed by a
+    /// device status upload, which has no "not yet uploaded" rows of its own to count.
+    var latestDetermination: Date?
 
     var pendingUploads: Int { pendingByKind.values.reduce(0, +) }
 }
@@ -63,6 +66,15 @@ enum SyncStatusRules {
             .timeIntervalSince(now) <= windowWarning
     }
 
+    /// True when the loop has made determinations recently but no device status reached Nightscout
+    /// for `behindAfter`: followers would see a stale loop. When the loop itself is not running there
+    /// is nothing to upload, and the loop warnings elsewhere cover it.
+    static func isDeviceStatusOverdue(record: SyncDestinationRecord, latestDetermination: Date?, now: Date) -> Bool {
+        guard let latestDetermination, now.timeIntervalSince(latestDetermination) <= behindAfter else { return false }
+        guard let lastUpload = record.lastSuccess[.deviceStatus] else { return true }
+        return now.timeIntervalSince(lastUpload) > behindAfter
+    }
+
     /// Failures that still count against the destination.
     static func activeFailures(_ record: SyncDestinationRecord, now: Date) -> [SyncFailure] {
         record.failures.values
@@ -93,6 +105,11 @@ enum SyncStatusRules {
         guard let backlog else { return .ok }
 
         if backlog.pendingDeletions > 0 {
+            return .behind
+        }
+        if destination == .nightscout,
+           isDeviceStatusOverdue(record: record, latestDetermination: backlog.latestDetermination, now: now)
+        {
             return .behind
         }
         if let oldest = backlog.oldestPending {

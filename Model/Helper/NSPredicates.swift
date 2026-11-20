@@ -97,6 +97,21 @@ extension NSPredicate {
     /// GlucoseStored rows from a sensor, excluding manual entries.
     static let cgmGlucose = NSPredicate(format: "isManual == NO")
 
+    /// How far ahead of the phone clock a glucose reading may be dated and still count
+    /// as current. Absorbs small clock differences between the phone and a CGM source.
+    static let glucoseFutureTolerance: TimeInterval = 60
+
+    /// GlucoseStored rows dated no later than now + `glucoseFutureTolerance`. A reading
+    /// dated in the future (wrong clock on the source) must not become the "latest"
+    /// reading for sync dates, the algorithm or glucose alarms.
+    static var glucoseNotInFuture: NSPredicate {
+        glucoseNotInFuture(now: Date())
+    }
+
+    static func glucoseNotInFuture(now: Date) -> NSPredicate {
+        NSPredicate(format: "date <= %@", now.addingTimeInterval(glucoseFutureTolerance) as NSDate)
+    }
+
     static var predicateForOneDayAgoInMinutes: NSPredicate {
         let date = Date.oneDayAgoInMinutes
         return NSPredicate(format: "date >= %@", date as NSDate)

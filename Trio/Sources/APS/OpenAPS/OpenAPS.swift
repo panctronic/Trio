@@ -382,11 +382,19 @@ final class OpenAPS {
         }
     }
 
-    /// Average TDD of the last two hours, or `longTermAverage` when no TDD was stored in that time (the calculation
-    /// failed, or the app was not running). An empty window used to count as 0 U, which pulled the weighted TDD down to
-    /// a fraction of the real one and made Dynamic ISF run on a far too low TDD.
-    static func recentTDDAverage(recentTotal: Decimal, recentCount: Int, longTermAverage: Decimal) -> Decimal {
-        guard recentCount > 0 else { return longTermAverage }
+    /// Average TDD of the last two hours. When no TDD was stored in that time (the calculation failed, or the app was not
+    /// running), the lower of the newest stored TDD and the long-term average: a lower TDD makes Dynamic ISF less
+    /// aggressive, and the real recent TDD may well be below the long-term one (illness, exercise, new medication).
+    /// An empty window used to count as 0 U, which pulled the weighted TDD far below the real one.
+    static func recentTDDAverage(
+        recentTotal: Decimal,
+        recentCount: Int,
+        newestStored: Decimal,
+        longTermAverage: Decimal
+    ) -> Decimal {
+        guard recentCount > 0 else {
+            return newestStored > 0 ? min(newestStored, longTermAverage) : longTermAverage
+        }
         return recentTotal / Decimal(recentCount)
     }
 
@@ -425,6 +433,7 @@ final class OpenAPS {
             let averageTDDLastTwoHours = OpenAPS.recentTDDAverage(
                 recentTotal: recentTotalTDD,
                 recentCount: recentTDDData.count,
+                newestStored: currentTDD,
                 longTermAverage: averageTDDLastTenDays
             )
             let weightedTDD = weightPercentage * averageTDDLastTwoHours + (1 - weightPercentage) * averageTDDLastTenDays
@@ -797,8 +806,13 @@ extension OpenAPS {
         )
     }
 
-    func fetchActiveOverrides(on context: NSManagedObjectContext) throws -> [OverrideStored] {
-        try CoreDataStack.shared.fetchObjectsAndWait(
+    /// The override the algorithm applies: the newest enabled one, unless its duration has run out.
+    ///
+    /// An override that ran out stays enabled in the store until something ends it, so the check
+    /// against `date + duration` happens here. Without it a timed override kept applying for as
+    /// long as nothing ended it (`AdjustmentManager.endExpiredOverrides`).
+    func fetchActiveOverrides(on context: NSManagedObjectContext, now: Date = Date()) throws -> [OverrideStored] {
+        let latest = try CoreDataStack.shared.fetchObjectsAndWait(
             ofType: OverrideStored.self,
             onContext: context,
             predicate: NSPredicate.lastActiveOverride,
@@ -806,6 +820,7 @@ extension OpenAPS {
             ascending: false,
             fetchLimit: 1
         )
+        return latest.filter { !$0.hasExpired(at: now) }
     }
 
     func fetchHistoricalTDDData(from date: Date, on context: NSManagedObjectContext) throws -> [[String: Any]] {

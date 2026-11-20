@@ -746,6 +746,20 @@ import Testing
         #expect(rows.filter(\.isFPU).allSatisfy { $0.fpuID == root?.fpuID })
     }
 
+    @Test("Overlapping remote fetches store a new meal once") func testConcurrentRemoteStores() async throws {
+        let date = Date().addingTimeInterval(-30 * 60)
+        let remote = CarbsEntry(
+            id: "65a1b2c3d4e5f60718293a4b", createdAt: date, actualDate: date, carbs: 40, fat: 0, protein: 0,
+            note: nil, enteredBy: "Nightscout", isFPU: false, fpuID: nil
+        )
+        async let first: Void = storage.storeCarbs([remote], areFetchedFromRemote: true)
+        async let second: Void = storage.storeCarbs([remote], areFetchedFromRemote: true)
+        _ = try await (first, second)
+
+        let rows = try await allStoredRows().filter { $0.date == date }
+        #expect(rows.count == 1, "The second fetch must see the meal the first one stored")
+    }
+
     @Test("Every entry of a batch is stored with its own carb equivalents") func testStoreBatch() async throws {
         let first = Date(timeIntervalSince1970: 1_700_000_000)
         let second = first.addingTimeInterval(3 * 60 * 60)

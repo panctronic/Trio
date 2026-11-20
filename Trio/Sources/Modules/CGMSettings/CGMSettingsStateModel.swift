@@ -42,6 +42,14 @@ extension CGMSettings {
         @Injected() var nightscoutManager: NightscoutManager!
         @Injected() var bluetoothManager: BluetoothStateManager!
         @Injected() var logExport: LogExport!
+        @Injected() var calibrationService: CalibrationService!
+
+        /// Stored calibrations are applied to every incoming reading, so the
+        /// Calibrations screen must stay reachable while any exist, even when the
+        /// current source isn't Libre, so they can be removed.
+        var hasStoredCalibrations: Bool {
+            calibrationService?.calibrations.isNotEmpty ?? false
+        }
 
         @Published var units: GlucoseUnits = .mgdL
         @Published var shouldDisplayCGMSetupSheet: Bool = false

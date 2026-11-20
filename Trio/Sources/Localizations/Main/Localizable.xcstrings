@@ -1098,7 +1098,7 @@
     "%@ U of external insulin was logged. Do not log it again. Only updating the forecast failed: %@" : {
       "comment" : "Message when external insulin was saved but the following determination failed; the arguments are the amount and the reason"
     },
-    "%@ U was rounded down to the bolus increment." : {
+    "%@ U was rounded to the bolus increment." : {
       "comment" : "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
     },
     "%@ U was rounded down to what the pump can deliver." : {
@@ -1194,11 +1194,11 @@
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
     },
+    "Nothing logged: the amount rounds to 0 U. The smallest amount that can be logged is %@ U." : {
+      "comment" : "Message when external insulin rounds to 0 U; the argument is the bolus increment"
+    },
     "Oldest waiting" : {
       "comment" : "Sync status: label for the age of the oldest record not yet uploaded"
-    },
-    "Overrides and Temp Targets" : {
-      "comment" : "Sync status data kind"
     },
     "Records that could not be uploaded are retried for %lld days (Nightscout) or %lld days (Tidepool and Apple Health). Older records are not uploaded." : {
       "comment" : "Sync status footer; the numbers are the upload retry windows in days"
@@ -1212,8 +1212,17 @@
     "Sync Status" : {
       "comment" : "Title of the screen showing upload status per destination"
     },
+    "The bolus was delivered. Do not bolus again. Glucose data is stale, so the forecast was not updated." : {
+      "comment" : "Alert after a successful bolus when glucose data is stale"
+    },
     "The carbs could not be saved, so no insulin was given or logged. Please try again." : {
       "comment" : "Alert when saving the meal failed on the treatments screen"
+    },
+    "The carbs were saved. Do not enter them again. Only updating the forecast failed: %@" : {
+      "comment" : "Alert when a meal was saved but the following determination failed; the argument is the reason"
+    },
+    "The external insulin was logged. Do not log it again. Glucose data is stale, so the forecast was not updated." : {
+      "comment" : "Alert after logging external insulin when glucose data is stale"
     },
     "The oldest waiting records have left the upload window and will not be uploaded." : {
       "comment" : "Sync status warning"
@@ -1361,6 +1370,9 @@
     },
     "Trio can send the Trio team a small, anonymous usage report once a day. It helps the team see which app versions, devices, pumps and CGMs are in use, so testing and support can focus on what people actually run." : {
       "comment" : "Usage data sharing explanation"
+    },
+    "Trio is not allowed to write this data to Apple Health. Check the permissions in the Health app." : {
+      "comment" : "Sync status: Apple Health write permission is missing for a kind of data"
     },
     "Trio is not allowed to write to Apple Health. Check the permissions in the Health app." : {
       "comment" : "Sync status: why Apple Health uploads cannot run"

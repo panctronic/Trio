@@ -14,6 +14,34 @@ private final class SyncTestClock: Sendable {
     func advance(_ interval: TimeInterval) { current.withLock { $0 += interval } }
 }
 
+/// File storage that can't read or write while "locked", like protected data before the first unlock.
+private final class LockableFileStorage: FileStorage, @unchecked Sendable {
+    let backing = InMemoryFileStorage()
+    private let lockedState = OSAllocatedUnfairLock(initialState: false)
+    var locked: Bool {
+        get { lockedState.withLock { $0 } }
+        set { lockedState.withLock { $0 = newValue } }
+    }
+
+    func save<Value: JSON>(_ value: Value, as name: String) { if !locked { backing.save(value, as: name) } }
+    func saveAsync<Value: JSON>(_ value: Value, as name: String) async { save(value, as: name) }
+    func retrieve<Value: JSON>(_ name: String, as type: Value.Type) -> Value? {
+        locked ? nil : backing.retrieve(name, as: type)
+    }
+
+    func retrieveAsync<Value: JSON>(_ name: String, as type: Value.Type) async -> Value? { retrieve(name, as: type) }
+    func retrieveRaw(_ name: String) -> RawJSON? { locked ? nil : backing.retrieveRaw(name) }
+    func retrieveRawAsync(_ name: String) async -> RawJSON? { retrieveRaw(name) }
+    func append<Value: JSON>(_: Value, to _: String) {}
+    func append<Value: JSON>(_: [Value], to _: String) {}
+    func append<Value: JSON, T: Equatable>(_: Value, to _: String, uniqBy _: KeyPath<Value, T>) {}
+    func append<Value: JSON, T: Equatable>(_: [Value], to _: String, uniqBy _: KeyPath<Value, T>) {}
+    func remove(_ name: String) { backing.remove(name) }
+    func rename(_ name: String, to newName: String) { backing.rename(name, to: newName) }
+    func transaction(_ exec: (FileStorage) -> Void) { exec(self) }
+    func urlFor(file _: String) -> URL? { nil }
+}
+
 @Suite("Sync status tracker") struct SyncStatusTrackerTests {
     @Test("A success records its time and clears the failure of the same kind only") func successClearsSameKind() {
         let clock = SyncTestClock()
@@ -60,10 +88,92 @@ private final class SyncTestClock: Sendable {
         let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
         tracker.recordSuccess(.nightscout, .deviceStatus)
         tracker.recordFailure(.appleHealth, .treatments, message: "Not authorized")
+        tracker.flush()
 
         let relaunched = SyncStatusTracker(storage: storage)
         #expect(relaunched.snapshot == tracker.snapshot)
         #expect(relaunched.snapshot[.nightscout].lastSuccess[.deviceStatus] == clock.now)
+    }
+
+    @Test("Failures reach the file right away") func failuresWrittenPromptly() {
+        let storage = InMemoryFileStorage()
+        let clock = SyncTestClock()
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
+
+        tracker.recordFailure(.nightscout, .glucose, message: "offline")
+        tracker.waitForPendingWrites()
+
+        #expect(storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self)?[.nightscout].failures[.glucose] != nil)
+    }
+
+    @Test("New upload times are written at most once a minute") func successesThrottled() {
+        let storage = InMemoryFileStorage()
+        let clock = SyncTestClock()
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now })
+        let stored = { storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self) ?? SyncStatusSnapshot() }
+
+        // Nothing written yet: the first change goes out right away.
+        tracker.recordSuccess(.nightscout, .glucose)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.nightscout].lastSuccess[.glucose] == clock.now)
+
+        // Within a minute of that write, a new time stays in memory.
+        clock.advance(10)
+        tracker.recordSuccess(.nightscout, .carbs)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.nightscout].lastSuccess[.carbs] == nil)
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.carbs] == clock.now)
+
+        // A success that clears a failure is not held back.
+        tracker.recordFailure(.tidepool, .carbs, message: "HTTP 500")
+        tracker.waitForPendingWrites()
+        clock.advance(5)
+        tracker.recordSuccess(.tidepool, .carbs)
+        tracker.waitForPendingWrites()
+        #expect(stored()[.tidepool].failures[.carbs] == nil)
+
+        tracker.flush()
+        #expect(stored() == tracker.snapshot)
+    }
+
+    @Test("A file that can't be read yet is kept, then merged once it can") func unreadableFileIsKept() throws {
+        let storage = LockableFileStorage()
+        let clock = SyncTestClock()
+        var onDisk = SyncStatusSnapshot()
+        onDisk[.tidepool].lastSuccess[.glucose] = clock.now.addingTimeInterval(-3600)
+        onDisk[.nightscout]
+            .failures[.carbs] = SyncFailure(kind: .carbs, message: "HTTP 500", date: clock.now.addingTimeInterval(-60))
+        storage.backing.save(onDisk, as: SyncStatusTracker.file)
+        storage.locked = true
+
+        let tracker = SyncStatusTracker(storage: storage, now: { clock.now }, fileExists: { _ in true })
+        #expect(tracker.snapshot == SyncStatusSnapshot())
+
+        // Recorded while locked: kept in memory, the file is not replaced.
+        tracker.recordSuccess(.nightscout, .carbs)
+        storage.locked = false
+        let untouched = try #require(storage.backing.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self))
+        #expect(untouched == onDisk)
+
+        // Once readable, the next write merges both.
+        tracker.flush()
+        let merged = tracker.snapshot
+        #expect(merged[.tidepool].lastSuccess[.glucose] == onDisk[.tidepool].lastSuccess[.glucose])
+        #expect(merged[.nightscout].lastSuccess[.carbs] == clock.now)
+        #expect(merged[.nightscout].failures[.carbs] == nil) // cleared by the later success
+        #expect(storage.backing.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self) == merged)
+    }
+
+    @Test("A missing or undecodable file starts empty and is replaced") func missingOrCorrupt() {
+        let storage = InMemoryFileStorage()
+        #expect(SyncStatusTracker(storage: storage).snapshot == SyncStatusSnapshot())
+
+        storage.save("not json" as RawJSON, as: SyncStatusTracker.file)
+        let tracker = SyncStatusTracker(storage: storage)
+        #expect(tracker.snapshot == SyncStatusSnapshot())
+        tracker.recordFailure(.nightscout, .glucose, message: "offline")
+        tracker.waitForPendingWrites()
+        #expect(storage.retrieve(SyncStatusTracker.file, as: SyncStatusSnapshot.self)?[.nightscout].failures[.glucose] != nil)
     }
 
     @Test("Changes are announced") func postsChange() {
@@ -78,6 +188,72 @@ private final class SyncTestClock: Sendable {
 
         tracker.recordSuccess(.nightscout, .glucose)
         #expect(received.withLock { $0 })
+    }
+}
+
+@Suite("Sync pass outcome") struct SyncPassOutcomeTests {
+    @Test("A failed batch is not hidden by a later batch that went through") func failureWins() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordSuccess(.tidepool, .glucose)
+
+        var pass = SyncPassOutcome()
+        pass.failed(SyncTestError(errorDescription: "HTTP 503"))
+        pass.succeeded()
+        tracker.record(pass, .tidepool, .glucose)
+
+        #expect(tracker.snapshot[.tidepool].failures[.glucose]?.message == "HTTP 503")
+    }
+
+    @Test("The first failure of a pass is the one recorded") func firstFailure() {
+        var pass = SyncPassOutcome.failure(message: "first")
+        pass.merge(.failure(message: "second"))
+        pass.merge(.success)
+        #expect(pass.firstFailureMessage == "first")
+    }
+
+    @Test("A pass that sent nothing records nothing") func emptyPass() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordFailure(.nightscout, .overrides, message: "offline")
+
+        var pass = SyncPassOutcome()
+        pass.merge(SyncPassOutcome())
+        #expect(pass.isEmpty)
+        tracker.record(pass, .nightscout, .overrides)
+
+        #expect(tracker.snapshot[.nightscout].failures[.overrides]?.message == "offline")
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.overrides] == nil)
+    }
+
+    @Test("A pass where every part went through clears the failure") func allSucceeded() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.recordFailure(.nightscout, .carbs, message: "offline")
+
+        var pass = SyncPassOutcome.success
+        pass.merge(SyncPassOutcome())
+        pass.merge(.success)
+        tracker.record(pass, .nightscout, .carbs)
+
+        #expect(tracker.snapshot[.nightscout].failures[.carbs] == nil)
+        #expect(tracker.snapshot[.nightscout].lastSuccess[.carbs] != nil)
+    }
+
+    @Test("Overrides and temp targets are tracked apart") func adjustmentsSeparate() {
+        let tracker = SyncStatusTracker(storage: nil)
+        tracker.record(.failure(message: "offline"), .nightscout, .overrides)
+        tracker.record(.success, .nightscout, .tempTargets)
+        #expect(tracker.snapshot[.nightscout].failures[.overrides] != nil)
+    }
+
+    @Test("Kinds from another version are skipped when the record is read") func unknownKindsAreSkipped() throws {
+        let json = """
+        {"destinations":{"nightscout":{"lastSuccess":{"glucose":"2027-01-15T08:00:00.000Z","adjustments":"2027-01-15T08:00:00.000Z"},\
+        "failures":{"adjustments":{"kind":"adjustments","message":"x","date":"2027-01-15T08:00:00.000Z"},\
+        "carbs":{"kind":"carbs","message":"HTTP 500","date":"2027-01-15T08:00:00.000Z"}}}}}
+        """
+        let snapshot = try JSONCoding.decoder.decode(SyncStatusSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot[.nightscout].lastSuccess.keys.sorted { $0.rawValue < $1.rawValue } == [.glucose])
+        #expect(snapshot[.nightscout].failures.keys.sorted { $0.rawValue < $1.rawValue } == [.carbs])
+        #expect(snapshot[.nightscout].failures[.carbs]?.message == "HTTP 500")
     }
 }
 
@@ -155,6 +331,28 @@ private final class SyncTestClock: Sendable {
         #expect(classify(backlog: backlog(oldestAge: nil, deletions: 1)) == .behind)
     }
 
+    @Test("Device status counts as behind when the loop runs but nothing reached Nightscout") func deviceStatusOverdue() {
+        var record = SyncDestinationRecord()
+        let looping = SyncBacklog(latestDetermination: now.addingTimeInterval(-5 * 60))
+
+        // Never uploaded while looping.
+        #expect(classify(record: record, backlog: looping) == .behind)
+
+        record.lastSuccess[.deviceStatus] = now.addingTimeInterval(-10 * 60)
+        #expect(classify(record: record, backlog: looping) == .ok)
+
+        record.lastSuccess[.deviceStatus] = now.addingTimeInterval(-(SyncStatusRules.behindAfter + 60))
+        #expect(classify(record: record, backlog: looping) == .behind)
+
+        // Loop not running: no device status expected.
+        let notLooping = SyncBacklog(latestDetermination: now.addingTimeInterval(-3 * hour))
+        #expect(classify(record: record, backlog: notLooping) == .ok)
+        #expect(classify(record: record, backlog: SyncBacklog()) == .ok)
+
+        // Only Nightscout receives device status.
+        #expect(classify(.tidepool, record: SyncDestinationRecord(), backlog: looping) == .ok)
+    }
+
     @Test("Nightscout records within a day of the 7-day window end are near the limit") func nightscoutWindow() {
         let near = now.addingTimeInterval(-(6 * day + hour))
         let notNear = now.addingTimeInterval(-(5 * day))
@@ -221,6 +419,6 @@ private final class SyncTestClock: Sendable {
             #expect(kinds.isSubset(of: Set(destination.dataKinds)))
             #expect(!kinds.contains(.deviceStatus))
         }
-        #expect(!SyncBacklogCounter.pendingQueries(for: .tidepool).contains { $0.kind == .adjustments })
+        #expect(!SyncBacklogCounter.pendingQueries(for: .tidepool).contains { $0.kind == .overrides || $0.kind == .tempTargets })
     }
 }
