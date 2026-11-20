@@ -146,7 +146,10 @@ final class BaseUserNotificationsManager: NSObject, UserNotificationsManager, In
         return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
-            predicate: NSPredicate.predicateFor20MinAgo,
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate.predicateFor20MinAgo,
+                NSPredicate.glucoseNotInFuture
+            ]),
             key: "date",
             ascending: false,
             fetchLimit: 3

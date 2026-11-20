@@ -442,7 +442,10 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
         return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
-            predicate: NSPredicate.glucose,
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate.glucose,
+                NSPredicate.glucoseNotInFuture
+            ]),
             key: "date",
             ascending: false
         )

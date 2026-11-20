@@ -18,7 +18,9 @@ extension Home.StateModel {
     }
 
     @MainActor func updateGlucoseFromController() {
-        guard let objects = glucoseController.fetchedObjects else { return }
+        guard let fetchedObjects = glucoseController.fetchedObjects else { return }
+        let cutoff = Date().addingTimeInterval(NSPredicate.glucoseFutureTolerance)
+        let objects = fetchedObjects.filter { ($0.date ?? .distantPast) <= cutoff }
         glucoseFromPersistence = objects
         latestTwoGlucoseValues = Array(objects.suffix(2))
         updateGlucoseChartYAxis(glucoseValues: objects)

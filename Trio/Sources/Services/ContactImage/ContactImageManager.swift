@@ -106,7 +106,10 @@ final class BaseContactImageManager: NSObject, ContactImageManager, Injectable {
         return try await CoreDataStack.shared.fetchObjectIDs(
             ofType: GlucoseStored.self,
             onContext: context,
-            predicate: NSPredicate.predicateFor20MinAgo,
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate.predicateFor20MinAgo,
+                NSPredicate.glucoseNotInFuture
+            ]),
             key: "date",
             ascending: false,
             fetchLimit: 3 /// We only need 1-3 values, depending on whether the user wants to show delta or not

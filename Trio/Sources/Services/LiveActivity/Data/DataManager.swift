@@ -11,7 +11,10 @@ extension LiveActivityManager {
         return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: context,
-            predicate: NSPredicate.predicateForSixHoursAgo,
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate.predicateForSixHoursAgo,
+                NSPredicate.glucoseNotInFuture
+            ]),
             key: "date",
             ascending: false
         ) { glucoseResults in
