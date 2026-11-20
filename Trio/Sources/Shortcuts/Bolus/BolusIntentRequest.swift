@@ -12,8 +12,8 @@ final class BolusIntentRequest: BaseIntentsRequest {
         return Decimal(pump.roundToSupportedBolusVolume(units: amount)).rounded(scale: 3)
     }
 
-    /// The amount of external insulin that will be logged: rounded down to the bolus increment, without the pump's
-    /// largest-volume cap, which would under-report insulin taken by pen.
+    /// The amount of external insulin that will be logged: rounded to the nearest bolus increment, without the pump's
+    /// largest-volume cap, which would under-report insulin taken by pen. 0 means nothing can be logged.
     func externalAmount(_ amount: Double) -> Decimal {
         ExternalInsulin.rounded(Decimal(amount).rounded(scale: 3), toIncrement: settingsManager.preferences.bolusIncrement)
     }
@@ -35,7 +35,7 @@ final class BolusIntentRequest: BaseIntentsRequest {
             message += " " + (
                 isExternal
                     ? String(
-                        localized: "\(requestedFormatted) U was rounded down to the bolus increment.",
+                        localized: "\(requestedFormatted) U was rounded to the bolus increment.",
                         comment: "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
                     )
                     : String(
@@ -118,6 +118,9 @@ final class BolusIntentRequest: BaseIntentsRequest {
         } else {
             // Rounded to the increment but not capped: external insulin up to 3 x max bolus is logged in full
             let bolusQuantity = externalAmount(bolusAmount)
+            guard bolusQuantity > 0 else {
+                return ExternalInsulin.nothingToLogMessage(increment: settingsManager.preferences.bolusIncrement)
+            }
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: bolusQuantity, timestamp: Date())
             // The insulin is recorded either way; a failed refresh must not read as a failed entry
             do {

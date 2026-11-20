@@ -48,9 +48,15 @@ import Testing
 }
 
 @Suite("TDD failure handling") struct TDDFailureHandlingTests {
-    @Test("An empty two-hour window falls back to the long-term average, not 0 U") func emptyRecentWindowFallsBack() {
-        #expect(OpenAPS.recentTDDAverage(recentTotal: 0, recentCount: 0, longTermAverage: 42) == 42)
-        #expect(OpenAPS.recentTDDAverage(recentTotal: 90, recentCount: 2, longTermAverage: 42) == 45)
+    @Test("An empty two-hour window uses the lower of the newest TDD and the long-term average") func emptyRecentWindowFallsBack() {
+        // Recent TDD below the long-term average (e.g. illness): the newest stored TDD is used.
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 0, recentCount: 0, newestStored: 30, longTermAverage: 42) == 30)
+        // Recent TDD above it: the long-term average is used, never the higher value.
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 0, recentCount: 0, newestStored: 55, longTermAverage: 42) == 42)
+        // Nothing stored at all.
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 0, recentCount: 0, newestStored: 0, longTermAverage: 42) == 42)
+        // A filled window is averaged as before.
+        #expect(OpenAPS.recentTDDAverage(recentTotal: 90, recentCount: 2, newestStored: 55, longTermAverage: 42) == 45)
     }
 
     @Test("Repeated TDD failures alert on the third, then hourly") func alertCadence() {

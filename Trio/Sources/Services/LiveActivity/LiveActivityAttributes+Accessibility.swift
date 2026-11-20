@@ -100,8 +100,10 @@ extension LiveActivityAttributes.ContentState {
     func accessibilitySummary(isStale: Bool, includesIOB: Bool = false, includesCOB: Bool = false) -> String {
         var parts = [glucoseAccessibilityLabel(isStale: isStale)]
         guard !isInitialState else { return parts[0] }
-        if includesIOB { parts.append(iobAccessibilityLabel) }
-        if includesCOB { parts.append(cobAccessibilityLabel) }
+        // When stale, IOB and COB are struck through on screen; say so instead of reading them as current.
+        let outdated = String(localized: "outdated", comment: "Accessibility: a glucose reading that is no longer current")
+        if includesIOB { parts.append(isStale ? iobAccessibilityLabel + ", " + outdated : iobAccessibilityLabel) }
+        if includesCOB { parts.append(isStale ? cobAccessibilityLabel + ", " + outdated : cobAccessibilityLabel) }
         if let updated = updatedAccessibilityLabel() { parts.append(updated) }
         return parts.joined(separator: ", ")
     }

@@ -176,7 +176,7 @@ extension WatchState {
     ) {
         beginAwaitingAcknowledgment()
 
-        session.sendMessage(message, replyHandler: nil) { error in
+        session.sendMessage(message, replyHandler: nil) { @Sendable error in
             WatchLogger.shared.error(category, failureLog, error: error)
             DispatchQueue.main.async {
                 self.handleMissingAcknowledgment()
@@ -213,7 +213,7 @@ extension WatchState {
             WatchMessageKeys.carbs: carbsAmount
         ]
 
-        session.sendMessage(message, replyHandler: nil) { error in
+        session.sendMessage(message, replyHandler: nil) { @Sendable error in
             WatchLogger.shared.warning(.bolus, "Requesting bolus recommendation failed", error: error)
             DispatchQueue.main.async {
                 self.showBolusCalculationProgress = false
@@ -239,14 +239,14 @@ extension WatchState {
 
             let message = [WatchMessageKeys.requestWatchUpdate: WatchMessageKeys.watchState]
 
-            session.sendMessage(message, replyHandler: { reply in
+            session.sendMessage(message, replyHandler: { @Sendable reply in
                 let payload = WatchPayload(reply)
                 DispatchQueue.main.async {
                     // Empty reply: the phone had no state.
                     let accepted = !payload.dictionary.isEmpty && self.acceptWatchStatePayload(payload.dictionary)
                     self.endSync(hidingAnimation: !accepted)
                 }
-            }, errorHandler: { error in
+            }, errorHandler: { @Sendable error in
                 WatchLogger.shared.warning(.connectivity, "Requesting a state update failed", error: error)
                 DispatchQueue.main.async {
                     self.endSync(hidingAnimation: true)

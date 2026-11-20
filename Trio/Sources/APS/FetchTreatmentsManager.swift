@@ -14,6 +14,8 @@ final class BaseFetchTreatmentsManager: FetchTreatmentsManager, Injectable {
 
     private var lifetime = Lifetime()
     private let timer = DispatchTimer(timeInterval: 1.minutes.timeInterval)
+    /// Only read and written on `processQueue`.
+    private var isFetching = false
 
     init(resolver: Resolver) {
         injectServices(resolver)
@@ -25,9 +27,16 @@ final class BaseFetchTreatmentsManager: FetchTreatmentsManager, Injectable {
             .receive(on: processQueue)
             .sink { [weak self] _ in
                 guard let self = self else { return }
+                // A fetch can take up to the 60 s Nightscout timeout: skip a tick rather than overlap it
+                guard !self.isFetching else {
+                    debug(.nightscout, "Previous carbs and temp targets fetch still running, tick skipped")
+                    return
+                }
+                self.isFetching = true
                 debug(.nightscout, "Fetching carbs and temp targets")
 
                 Task {
+                    defer { self.processQueue.async { self.isFetching = false } }
                     do {
                         // Fetch carbs and temp targets concurrently
                         async let carbs = self.nightscoutManager.fetchCarbs()

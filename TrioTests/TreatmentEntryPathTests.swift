@@ -72,7 +72,7 @@ import Testing
 
     // MARK: - External insulin
 
-    @Test("External insulin is rounded to the increment without a volume cap") func testExternalInsulinRounding() {
+    @Test("External insulin is rounded to the nearest increment without a volume cap") func testExternalInsulinRounding() {
         #expect(ExternalInsulin.rounded(40, toIncrement: 0.05) == 40, "40 U taken must not be logged as a pump's 30 U maximum")
         #expect(
             ExternalInsulin
@@ -83,6 +83,19 @@ import Testing
                 .rounded(Decimal(string: "2.35")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.35")!
         )
         #expect(ExternalInsulin.rounded(-1, toIncrement: 0.05) == 0)
+        #expect(
+            ExternalInsulin.rounded(Decimal(string: "2.38")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.4")!,
+            "Rounded to the nearest step, not down"
+        )
+        #expect(
+            ExternalInsulin
+                .rounded(Decimal(string: "0.03")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "0.05")!
+        )
+        #expect(ExternalInsulin.rounded(Decimal(string: "0.02")!, toIncrement: Decimal(string: "0.05")!) == 0)
+        #expect(
+            ExternalInsulin.nothingToLogMessage(increment: Decimal(string: "0.05")!)
+                .contains(Decimal(string: "0.05")!.formatted())
+        )
     }
 
     @Test("External insulin above max bolus is always confirmed with a warning") func testExternalInsulinConfirmation() {
@@ -134,6 +147,20 @@ import Testing
         let failed = Treatments.StateModel.mealSavedBolusFailedMessage(for: .failed(message: "Pump suspended", error: nil))
         #expect(failed.contains("Pump suspended"))
         #expect(Treatments.StateModel.mealSavedBolusFailedMessage(for: nil) != failed)
+    }
+
+    @Test("A failed forecast update after saving a meal says the carbs were saved") func testMealSavedForecastFailed() {
+        let error = NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "CGM warming up"])
+        let message = Treatments.StateModel.mealSavedButForecastFailedMessage(error: error)
+        #expect(message.contains("CGM warming up"))
+        #expect(message.contains("saved"), "The user must learn the carbs are already saved")
+    }
+
+    @Test("Stale glucose after insulin says the insulin was given") func testInsulinGivenGlucoseStale() {
+        let pump = Treatments.StateModel.insulinGivenButGlucoseStaleMessage(isExternal: false)
+        let external = Treatments.StateModel.insulinGivenButGlucoseStaleMessage(isExternal: true)
+        #expect(pump.contains("delivered"))
+        #expect(external.contains("logged"))
     }
 
     @Test("A failed bolus without a meal shows the pump's reason") func testBolusFailedMessage() {

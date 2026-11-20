@@ -593,9 +593,9 @@ final class BaseAPSManager: APSManager, Injectable {
 
     /// Returns the object ID of the stored determination this run produced.
     @discardableResult private func determineBasal() async throws -> NSManagedObjectID {
-        // TDD only feeds Dynamic ISF, which works from the stored TDD history (the two-hour average falls back to the
-        // ten-day one when no recent TDD was stored, and Dynamic ISF is off for the run without enough history), so a
-        // failed calculation must not stop the loop from dosing. Repeated failures are surfaced to the user.
+        // TDD only feeds Dynamic ISF, which works from the stored TDD history (without recent TDD the two-hour term takes
+        // the lower of the newest stored TDD and the ten-day average, and Dynamic ISF is off for the run without enough
+        // history), so a failed calculation must not stop the loop from dosing. Repeated failures are surfaced to the user.
         do {
             try await calculateAndStoreTDD()
             transientCategoryLock.withLock { consecutiveTDDFailures = 0 }

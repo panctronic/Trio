@@ -1,6 +1,8 @@
+import Combine
 import CoreData
 import Foundation
 import Swinject
+import UIKit
 
 // MARK: - Public surface
 
@@ -80,6 +82,11 @@ protocol AdjustmentManager {
     ) async throws -> AdjustmentOutcome
 
     @discardableResult func cancelTempTarget(source: AdjustmentSource, waitForUpload: Bool) async throws -> AdjustmentOutcome
+
+    /// Ends every enabled override whose duration has run out at `now`, recording each run as ending
+    /// at its expiry (start + duration) rather than at the moment it is noticed. Returns the runs it
+    /// ended; ending nothing is not an error.
+    @discardableResult func endExpiredOverrides(now: Date) async throws -> [AdjustmentSummary]
 }
 
 extension AdjustmentManager {
@@ -104,6 +111,10 @@ extension AdjustmentManager {
     @discardableResult func cancelTempTarget(source: AdjustmentSource) async throws -> AdjustmentOutcome {
         try await cancelTempTarget(source: source, waitForUpload: false)
     }
+
+    @discardableResult func endExpiredOverrides() async throws -> [AdjustmentSummary] {
+        try await endExpiredOverrides(now: Date())
+    }
 }
 
 // MARK: - Implementation
@@ -118,6 +129,8 @@ final class BaseAdjustmentManager: AdjustmentManager, Injectable, @unchecked Sen
     private let serializer = AdjustmentSerializer()
     /// Stands in for the determination step, so a caller can exercise the transaction on its own.
     private let recompute: (@Sendable() async -> Void)?
+    /// Written only in `init`; holds the subscriptions that end expired overrides.
+    private var subscriptions = Set<AnyCancellable>()
 
     init(
         resolver: Resolver,
@@ -127,6 +140,29 @@ final class BaseAdjustmentManager: AdjustmentManager, Injectable, @unchecked Sen
         makeContext = contextProvider ?? { CoreDataStack.shared.newTaskContext() }
         self.recompute = recompute
         injectServices(resolver)
+        observeOverrideExpiry()
+    }
+
+    /// A timed override has to end even when no screen is open, so expired ones are ended after
+    /// every determination (the algorithm itself already ignores them, see
+    /// `OpenAPS.fetchActiveOverrides`) and when the app returns to the foreground.
+    private func observeOverrideExpiry() {
+        apsManager.iobFileDidUpdate
+            .sink { [weak self] in self?.endExpiredOverridesInBackground(trigger: "determination") }
+            .store(in: &subscriptions)
+        Foundation.NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .sink { [weak self] _ in self?.endExpiredOverridesInBackground(trigger: "foreground") }
+            .store(in: &subscriptions)
+    }
+
+    private func endExpiredOverridesInBackground(trigger: String) {
+        Task { [weak self] in
+            do {
+                try await self?.endExpiredOverrides()
+            } catch {
+                warning(.treatments, "Ending expired overrides after \(trigger) failed", error: error)
+            }
+        }
     }
 
     // MARK: Overrides
@@ -165,23 +201,12 @@ final class BaseAdjustmentManager: AdjustmentManager, Injectable, @unchecked Sen
                 throw AdjustmentError.nothingActive
             }
 
-            var ended: [AdjustmentSummary] = []
             // Every enabled row gets its own run entry. When the requested preset is the row that
             // is already running, the enable below restarts it and this entry holds the segment
             // that has elapsed.
-            for row in active {
+            let ended = active.map { row in
                 let endDate = self.effectiveEndDate(start: row.date, duration: row.duration, indefinite: row.indefinite, now: now)
-                let run = OverrideRunStored(context: context)
-                run.id = UUID()
-                run.name = row.name
-                run.startDate = row.date ?? endDate
-                run.endDate = endDate
-                run.target = row.target ?? 0
-                run.override = row
-                run.isUploadedToNS = false
-
-                row.enabled = false
-                ended.append(AdjustmentSummary(row: row, startDate: run.startDate ?? endDate, endDate: endDate))
+                return self.endOverride(row, at: endDate, in: context)
             }
 
             var started: AdjustmentSummary?
@@ -195,6 +220,57 @@ final class BaseAdjustmentManager: AdjustmentManager, Injectable, @unchecked Sen
             try self.save(context)
             return AdjustmentOutcome(started: started, ended: ended)
         }
+    }
+
+    @discardableResult func endExpiredOverrides(now: Date) async throws -> [AdjustmentSummary] {
+        let ended = try await serializer.run { try await self.commitExpiredOverrides(now: now) }
+        guard !ended.isEmpty else { return [] }
+        info(.treatments, "Override ran out: \(ended.map { "\"\($0.name ?? "Custom")\"" }.joined(separator: ", "))")
+        // The run entries carry the real duration to Nightscout. No new determination: the
+        // algorithm already stopped applying the override when its duration ran out.
+        requestNightscoutUpload([.overrides], source: "AdjustmentManager.expiry")
+        Foundation.NotificationCenter.default.post(name: .didUpdateOverrideConfiguration, object: nil)
+        return ended
+    }
+
+    /// Ends the enabled finite overrides that ran out by `now`. Not limited to the last day like
+    /// `lastActiveOverride`, so a long override that ran out while the app was not running still ends.
+    private func commitExpiredOverrides(now: Date) async throws -> [AdjustmentSummary] {
+        let context = makeContext()
+        context.name = "commitExpiredOverrides"
+
+        return try await context.perform {
+            let ended = try CoreDataStack.shared.fetchObjectsAndWait(
+                ofType: OverrideStored.self,
+                onContext: context,
+                predicate: NSPredicate.enabledFiniteOverrides,
+                key: "date",
+                ascending: true
+            )
+            .compactMap { row -> AdjustmentSummary? in
+                guard row.hasExpired(at: now), let expiry = row.expiryDate else { return nil }
+                return self.endOverride(row, at: expiry, in: context)
+            }
+
+            try self.save(context)
+            return ended
+        }
+    }
+
+    /// Disables `row` and writes the run entry that records it, ending at `endDate`. Runs on
+    /// `context`'s queue; the caller saves.
+    private func endOverride(_ row: OverrideStored, at endDate: Date, in context: NSManagedObjectContext) -> AdjustmentSummary {
+        let run = OverrideRunStored(context: context)
+        run.id = UUID()
+        run.name = row.name
+        run.startDate = row.date ?? endDate
+        run.endDate = endDate
+        run.target = row.target ?? 0
+        run.override = row
+        run.isUploadedToNS = false
+
+        row.enabled = false
+        return AdjustmentSummary(row: row, startDate: run.startDate ?? endDate, endDate: endDate)
     }
 
     private func applyOverrideSideEffects(source: AdjustmentSource, waitForUpload: Bool) async {

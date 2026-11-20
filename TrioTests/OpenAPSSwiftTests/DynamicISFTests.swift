@@ -249,4 +249,113 @@ import Testing
 
         #expect(result.ratio.rounded(toPlaces: 2) == Decimal(string: "1.11"))
     }
+
+    // MARK: - Exercise setting with a high target (determine-basal.js: currentMinTarget >= 118 && exerciseSetting)
+
+    @Test(
+        "High temp target with high_temptarget_raises_sensitivity turns Dynamic ISF off",
+        arguments: [
+            (Decimal(140), false),
+            (Decimal(140), true),
+            (Decimal(160), false),
+            (Decimal(160), true),
+            (Decimal(118), true)
+        ]
+    ) func highTempTargetWithExerciseSettingTurnsOff(tempTarget: Decimal, sigmoid: Bool) throws {
+        var (profile, preferences, glucose, trioVars) = createDependencies()
+        preferences.sigmoid = sigmoid
+        profile.highTemptargetRaisesSensitivity = true
+        profile.minBg = tempTarget
+        profile.maxBg = tempTarget
+        profile.temptargetSet = true
+
+        let result = DynamicISF.calculate(
+            profile: profile,
+            preferences: preferences,
+            currentGlucose: glucose,
+            trioCustomOrefVariables: trioVars
+        )
+
+        #expect(result == nil)
+        #expect(preferences.dynamicIsfState(profile: profile, trioCustomOrefVariables: trioVars) == .off)
+    }
+
+    @Test(
+        "High temp target without an exercise setting keeps Dynamic ISF on",
+        arguments: [(Decimal(140), false), (Decimal(160), true)]
+    ) func highTempTargetWithoutExerciseSettingStaysOn(tempTarget: Decimal, sigmoid: Bool) throws {
+        var (profile, preferences, glucose, trioVars) = createDependencies()
+        preferences.sigmoid = sigmoid
+        profile.highTemptargetRaisesSensitivity = false
+        profile.minBg = tempTarget
+        profile.maxBg = tempTarget
+        profile.temptargetSet = true
+
+        let result = DynamicISF.calculate(
+            profile: profile,
+            preferences: preferences,
+            currentGlucose: glucose,
+            trioCustomOrefVariables: trioVars
+        )
+
+        #expect(result != nil)
+        #expect(
+            preferences
+                .dynamicIsfState(profile: profile, trioCustomOrefVariables: trioVars) == (sigmoid ? .sigmoid : .logrithmic)
+        )
+    }
+
+    @Test("Target just below 118 with an exercise setting keeps Dynamic ISF on") func targetBelowCutoffStaysOn() throws {
+        var (profile, preferences, glucose, trioVars) = createDependencies()
+        profile.highTemptargetRaisesSensitivity = true
+        profile.minBg = 117
+        profile.maxBg = 117
+        profile.temptargetSet = true
+
+        let result = DynamicISF.calculate(
+            profile: profile,
+            preferences: preferences,
+            currentGlucose: glucose,
+            trioCustomOrefVariables: trioVars
+        )
+
+        #expect(result != nil)
+    }
+
+    @Test("High override target with an exercise setting turns Dynamic ISF off") func highOverrideTargetTurnsOff() throws {
+        var (profile, preferences, glucose, trioVars) = createDependencies()
+        profile.highTemptargetRaisesSensitivity = true
+        trioVars.useOverride = true
+        trioVars.overrideTarget = 130
+        trioVars.overridePercentage = 100
+
+        let result = DynamicISF.calculate(
+            profile: profile,
+            preferences: preferences,
+            currentGlucose: glucose,
+            trioCustomOrefVariables: trioVars
+        )
+
+        #expect(result == nil)
+        #expect(preferences.dynamicIsfState(profile: profile, trioCustomOrefVariables: trioVars) == .off)
+    }
+
+    @Test("A temp target takes precedence over a high override target") func tempTargetWinsOverOverrideTarget() throws {
+        var (profile, preferences, glucose, trioVars) = createDependencies()
+        profile.highTemptargetRaisesSensitivity = true
+        profile.minBg = 100
+        profile.maxBg = 100
+        profile.temptargetSet = true
+        trioVars.useOverride = true
+        trioVars.overrideTarget = 130
+
+        let result = DynamicISF.calculate(
+            profile: profile,
+            preferences: preferences,
+            currentGlucose: glucose,
+            trioCustomOrefVariables: trioVars
+        )
+
+        #expect(result != nil)
+    }
 }
