@@ -42,6 +42,8 @@ on:
   pull_request:
     branches:
       - dev
+      # Release PRs (dev -> main) must pass the unit tests too.
+      - main
     types: [opened, synchronize]
   issues:
     types:
