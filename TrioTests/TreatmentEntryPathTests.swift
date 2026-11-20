@@ -59,4 +59,28 @@ import Testing
         )
         #expect(BaseCarbsStorage.withFPUIDIfNeeded(linked).fpuID == fpuID)
     }
+
+    // MARK: - Shortcut bolus
+
+    @Test("Shortcut confirmation names the rounded amount") func testShortcutConfirmationRounded() {
+        let message = BolusIntentRequest.confirmationMessage(requested: 2.37, deliverable: 2.35, isExternal: false)
+        #expect(message.contains(Decimal(string: "2.35")!.formatted()))
+        #expect(message.contains(Decimal(string: "2.37")!.formatted()), "The rounding must be explained")
+    }
+
+    @Test("Shortcut confirmation without rounding has no rounding note") func testShortcutConfirmationExact() {
+        let message = BolusIntentRequest.confirmationMessage(requested: 2.35, deliverable: 2.35, isExternal: false)
+        let rounded = BolusIntentRequest.confirmationMessage(requested: 2.37, deliverable: 2.35, isExternal: false)
+        #expect(message.count < rounded.count)
+    }
+
+    @Test("Shortcut result reports the real bolus outcome") func testShortcutResult() {
+        let enacted = BolusIntentRequest.resultMessage(for: .enacted(message: "ok"), amount: 1.5)
+        let failed = BolusIntentRequest.resultMessage(for: .failed(message: "Pump suspended", error: nil), amount: 1.5)
+        let unknown = BolusIntentRequest.resultMessage(for: nil, amount: 1.5)
+
+        #expect(enacted != failed)
+        #expect(failed.contains("Pump suspended"), "The pump's reason must reach the user")
+        #expect(unknown != enacted)
+    }
 }

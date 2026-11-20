@@ -3,6 +3,58 @@ import CoreData
 import Foundation
 
 final class BolusIntentRequest: BaseIntentsRequest {
+    /// The amount the pump will actually deliver for `amount`: rounded to a bolus volume the pump supports.
+    ///
+    /// Not capped at max bolus, so the user confirms the amount they asked for and the safety checks refuse it if too large.
+    func deliverableAmount(_ amount: Double) -> Decimal {
+        guard amount > 0 else { return 0 }
+        guard let pump = apsManager.pumpManager else { return Decimal(amount).rounded(scale: 3) }
+        return Decimal(pump.roundToSupportedBolusVolume(units: amount)).rounded(scale: 3)
+    }
+
+    /// The confirmation question shown before a Shortcut bolus, naming the amount that will really be delivered or logged.
+    static func confirmationMessage(requested: Double, deliverable: Decimal, isExternal: Bool) -> String {
+        let deliverableFormatted = deliverable.formatted()
+        var message = isExternal
+            ? String(localized: "Are you sure to log \(deliverableFormatted) U of external insulin?")
+            : String(localized: "Are you sure to bolus \(deliverableFormatted) U of insulin?")
+        if deliverable != Decimal(requested).rounded(scale: 3) {
+            let requestedFormatted = Decimal(requested).rounded(scale: 3).formatted()
+            message += " " + String(
+                localized: "\(requestedFormatted) U was rounded down to what the pump can deliver.",
+                comment: "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
+            )
+        }
+        return message
+    }
+
+    /// The Shortcut result for a bolus, based on how the pump command actually ended.
+    static func resultMessage(for result: BolusEnactmentResult?, amount: Decimal) -> String {
+        let amountFormatted = amount.formatted()
+        switch result {
+        case .enacted:
+            return String(
+                localized: "A bolus of \(amountFormatted) U of insulin was enacted.",
+                comment: "Shortcut result when the pump confirmed the bolus"
+            )
+        case let .failed(message, _):
+            return String(
+                localized: "Bolus of \(amountFormatted) U not delivered. \(message)",
+                comment: "Shortcut result when the bolus was refused or failed; the second argument is the reason"
+            )
+        case let .uncertainDelivery(message, _):
+            return String(
+                localized: "The pump did not confirm the bolus of \(amountFormatted) U, it may have been delivered. Check pump history before repeating. \(message)",
+                comment: "Shortcut result when it is not known whether the bolus was delivered; the second argument is the reason"
+            )
+        case .none:
+            return String(
+                localized: "The outcome of the bolus of \(amountFormatted) U is not known. Check pump history before repeating.",
+                comment: "Shortcut result when no outcome was reported for the bolus"
+            )
+        }
+    }
+
     func bolus(_ bolusAmount: Double) async throws -> String {
         switch settingsManager.settings.bolusShortcut {
         case .notAllowed:
@@ -20,16 +72,18 @@ final class BolusIntentRequest: BaseIntentsRequest {
             }
 
             let bolusQuantity = apsManager.roundBolus(amount: requestedAmount)
-            await apsManager.enactBolus(amount: Double(bolusQuantity), isSMB: false, callback: nil)
-            return String(
-                localized:
-                "A bolus command of \(bolusQuantity.formatted()) U of insulin was sent."
-            )
+            var enactmentResult: BolusEnactmentResult?
+            await apsManager.enactBolus(amount: Double(bolusQuantity), isSMB: false) { (result: BolusEnactmentResult) in
+                enactmentResult = result
+            }
+            if enactmentResult?.isSuccess != true {
+                warning(.bolus, "Shortcut bolus of \(bolusQuantity) U not enacted: \(enactmentResult?.message ?? "no result")")
+            }
+            return Self.resultMessage(for: enactmentResult, amount: bolusQuantity.rounded(scale: 3))
         }
     }
 
     func bolusExternal(_ bolusAmount: Double) async throws -> String {
-        var bolusQuantity: Decimal = 0
         var maxExternal: Decimal { settingsManager.pumpSettings.maxBolus * 3 }
         if Decimal(bolusAmount) > maxExternal {
             return String(
@@ -37,7 +91,8 @@ final class BolusIntentRequest: BaseIntentsRequest {
                 "The external bolus cannot be larger than 3 x the pump setting max bolus (\(settingsManager.pumpSettings.maxBolus.description))."
             )
         } else {
-            bolusQuantity = apsManager.roundBolus(amount: Decimal(bolusAmount))
+            // Rounded like a pump bolus but not capped at max bolus: external insulin up to 3 x max bolus is logged in full
+            let bolusQuantity = deliverableAmount(bolusAmount)
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: bolusQuantity, timestamp: Date())
             // perform determine basal sync
             try await apsManager.determineBasalSync()

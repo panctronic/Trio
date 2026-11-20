@@ -63,28 +63,29 @@ struct BolusIntent: AppIntent {
     @MainActor func perform() async throws -> some ProvidesDialog {
         do {
             let amount: Double = bolusQuantity
+            let request = BolusIntentRequest()
 
-            let bolusFormatted = amount.formatted()
             if confirmBeforeApplying {
+                // Confirm the amount the pump will deliver, not the unrounded amount typed in
                 try await requestConfirmation(
                     result: .result(
                         dialog: IntentDialog(
-                            stringLiteral: String(
-                                localized:
-                                externalInsulin ? "Are you sure to log \(bolusFormatted) U of external insulin?" :
-                                    "Are you sure to bolus \(bolusFormatted) U of insulin?"
+                            stringLiteral: BolusIntentRequest.confirmationMessage(
+                                requested: amount,
+                                deliverable: request.deliverableAmount(amount),
+                                isExternal: externalInsulin
                             )
                         )
                     )
                 )
             }
             if externalInsulin {
-                let finalExternalBolusDisplay = try await BolusIntentRequest().bolusExternal(amount)
+                let finalExternalBolusDisplay = try await request.bolusExternal(amount)
                 return .result(
                     dialog: IntentDialog(stringLiteral: finalExternalBolusDisplay)
                 )
             } else {
-                let finalBolusDisplay = try await BolusIntentRequest().bolus(amount)
+                let finalBolusDisplay = try await request.bolus(amount)
                 return .result(
                     dialog: IntentDialog(stringLiteral: finalBolusDisplay)
                 )
