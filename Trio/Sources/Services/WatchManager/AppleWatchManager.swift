@@ -964,7 +964,10 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
                 return
             }
 
-            await storeWatchCarbs(carbs, date: date)
+            guard await storeWatchCarbs(carbs, date: date) else {
+                sendAcknowledgment(toWatch: false, message: Self.carbsNotSavedMessage, ackCode: .genericFailure)
+                return
+            }
             sendAcknowledgment(
                 toWatch: true,
                 message: String(
@@ -1017,7 +1020,15 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
                 ackCode: .savingCarbs
             )
 
-            await storeWatchCarbs(carbsAmount, date: date)
+            // No bolus for carbs that were not saved
+            guard await storeWatchCarbs(carbsAmount, date: date) else {
+                sendAcknowledgment(
+                    toWatch: false,
+                    message: "\(Self.carbsNotSavedMessage) \(String(localized: "No bolus enacted.", comment: "Watch message added when a bolus was not given because its carbs could not be saved"))",
+                    ackCode: .genericFailure
+                )
+                return
+            }
 
             let carbsLoggedPrefix = String(
                 localized: "Carbs logged, bolus not enacted.",
@@ -1110,13 +1121,21 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
         )
     }
 
+    static let carbsNotSavedMessage = String(
+        localized: "Error! Carbs could not be saved.",
+        comment: "Watch message when carbs from the watch could not be saved"
+    )
+
     /// Saves Watch carbs through `CarbsStorage`, the same path the Treatments screen uses.
-    private func storeWatchCarbs(_ carbs: Decimal, date: Date) async {
+    /// - Returns: `true` if the carbs were saved.
+    private func storeWatchCarbs(_ carbs: Decimal, date: Date) async -> Bool {
         do {
             try await carbsStorage.storeCarbs([Self.watchCarbsEntry(carbs: carbs, date: date)], areFetchedFromRemote: false)
             info(.treatments, "Saved \(carbs) g carbs from watch")
+            return true
         } catch {
             warning(.treatments, "Saving carbs from watch failed", error: error)
+            return false
         }
     }
 

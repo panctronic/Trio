@@ -1131,6 +1131,12 @@
     "Carbs were saved, but the pump did not confirm the bolus, it may have been delivered. Check pump history before repeating the bolus. %@" : {
       "comment" : "Alert when a meal was saved and it is not known whether the bolus with it was delivered; the argument is the pump's reason"
     },
+    "Error! Carbs could not be saved." : {
+      "comment" : "Watch message when carbs from the watch could not be saved"
+    },
+    "No bolus enacted." : {
+      "comment" : "Watch message added when a bolus was not given because its carbs could not be saved"
+    },
     "Nothing logged, no bolus enacted: %@" : {
       "comment" : "Watch message when a carbs and bolus entry is refused; the argument is the reason"
     },
