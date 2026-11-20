@@ -1050,6 +1050,7 @@
 		DD6F63CC2D27F615007D94CF /* TreatmentMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6F63CB2D27F606007D94CF /* TreatmentMenuView.swift */; };
 		DD73FA0F2D74F58E00D19D1E /* BackgroundTask+Helper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD73FA0E2D74F57300D19D1E /* BackgroundTask+Helper.swift */; };
 		5AFE1A0400000000000000B1 /* AsyncTimeout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE1A0300000000000000B1 /* AsyncTimeout.swift */; };
+		A1E7C0DE2F00000000000002 /* DetermineBasalExerciseTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E7C0DE2F00000000000001 /* DetermineBasalExerciseTargetTests.swift */; };
 		DD758EDE2ECC656500EF5D54 /* DetermineBasalSmbMicroBolusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD758EDD2ECC656500EF5D54 /* DetermineBasalSmbMicroBolusTests.swift */; };
 		DD7E1E300000000000000002 /* TelemetryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7E1E300000000000000001 /* TelemetryClient.swift */; };
 		DD7E1E300000000000000004 /* TelemetryPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7E1E300000000000000003 /* TelemetryPreviewView.swift */; };
@@ -2351,6 +2352,7 @@
 		DD6F63CB2D27F606007D94CF /* TreatmentMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreatmentMenuView.swift; sourceTree = "<group>"; };
 		DD73FA0E2D74F57300D19D1E /* BackgroundTask+Helper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BackgroundTask+Helper.swift"; sourceTree = "<group>"; };
 		5AFE1A0300000000000000B1 /* AsyncTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeout.swift; sourceTree = "<group>"; };
+		A1E7C0DE2F00000000000001 /* DetermineBasalExerciseTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetermineBasalExerciseTargetTests.swift; sourceTree = "<group>"; };
 		DD758EDD2ECC656500EF5D54 /* DetermineBasalSmbMicroBolusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetermineBasalSmbMicroBolusTests.swift; sourceTree = "<group>"; };
 		DD7E1E300000000000000001 /* TelemetryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryClient.swift; sourceTree = "<group>"; };
 		DD7E1E300000000000000003 /* TelemetryPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryPreviewView.swift; sourceTree = "<group>"; };
@@ -3955,6 +3957,7 @@
 				3B3B4F532E6619FF00B668E3 /* DetermineBasalGlucoseFallingFasterThanExpectedTests.swift */,
 				3B3B4F572E662B1500B668E3 /* DetermineBasalIobGreaterThanMaxTests.swift */,
 				3B1DB90E2E63C14200BD814B /* DetermineBasalLowEventualGlucoseTests.swift */,
+				A1E7C0DE2F00000000000001 /* DetermineBasalExerciseTargetTests.swift */,
 				DD758EDD2ECC656500EF5D54 /* DetermineBasalSmbMicroBolusTests.swift */,
 				3B2A3BC22E2B19F700658FB9 /* DynamicISFTests.swift */,
 				3B1C5C352D68E269004E9273 /* IobCalculateTests.swift */,
@@ -6935,6 +6938,7 @@
 				940584C38CB62676214A2107 /* RemoteMealMutationPayloadTests.swift in Sources */,
 				3B1C5C432D68E269004E9273 /* Extensions.swift in Sources */,
 				3BC26E552D7418830066ACD6 /* IobSuspendTests.swift in Sources */,
+				A1E7C0DE2F00000000000002 /* DetermineBasalExerciseTargetTests.swift in Sources */,
 				DD758EDE2ECC656500EF5D54 /* DetermineBasalSmbMicroBolusTests.swift in Sources */,
 				3B1C5C452D68E269004E9273 /* IobTotalTests.swift in Sources */,
 				3BE2F1EA2E031951009E2900 /* MealCobBucketingTests.swift in Sources */,
