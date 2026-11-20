@@ -3,7 +3,7 @@ import Swinject
 import Testing
 @testable import Trio
 
-@Suite("Plugin Manager Tests", .serialized) struct PluginManagerTests: Injectable {
+@Suite("Plugin Manager Tests", .serialized) @MainActor struct PluginManagerTests: Injectable {
     let fileStorage = BaseFileStorage()
     @Injected() var pluginManager: PluginManager!
     let resolver = TrioApp.resolver

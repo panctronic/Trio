@@ -4,7 +4,7 @@ import Testing
 
 @testable import Trio
 
-@Suite("Bolus Safety Validator Tests") struct BolusSafetyValidatorTests: Injectable {
+@Suite("Bolus Safety Validator Tests") @MainActor struct BolusSafetyValidatorTests: Injectable {
     @Injected() var validator: BolusSafetyValidator!
     let resolver = TrioApp.resolver
 
