@@ -255,31 +255,30 @@ import Testing
         #expect(request.value(forHTTPHeaderField: "X-Trio-InstallId") == "install-123")
     }
 
-    @Test("Anonymous request is an empty contextual GET") func anonymousRequest() throws {
-        let context = TelemetryRequestContext(
-            reason: "foreground",
-            lastFailureReason: "registration_failed",
-            trioVersion: "0.8.1",
-            installID: "install-123"
-        )
-        let request = try #require(
-            TelemetryClient.anonymousRequest(
-                baseURL: URL(string: "https://telemetry.example")!,
-                context: context
-            )
-        )
-        let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
+    @Test("Only an explicit opt-in allows telemetry requests") func consentGate() {
+        #expect(TelemetryConsent(flag: true).allowsSending)
+        #expect(!TelemetryConsent(flag: false).allowsSending)
+        // not having chosen is not consent
+        #expect(!TelemetryConsent(flag: nil).allowsSending)
+        #expect(TelemetryConsent(flag: nil) == .undecided)
+    }
 
-        #expect(request.httpMethod == "GET")
-        #expect(request.httpBody == nil)
-        #expect(request.value(forHTTPHeaderField: "Content-Type") == nil)
-        #expect(request.value(forHTTPHeaderField: "X-Trio-Version") == "0.8.1")
-        #expect(request.value(forHTTPHeaderField: "X-Trio-InstallId") == "install-123")
-        #expect(components.path == "/anonymous")
-        #expect(components.queryItems?.contains(URLQueryItem(name: "reason", value: "foreground")) == true)
-        #expect(
-            components.queryItems?.contains(URLQueryItem(name: "lastFailureReason", value: "registration_failed")) == true
-        )
+    @Test("Only undecided users who finished onboarding are asked") func consentPrompt() {
+        #expect(TelemetryConsent.undecided.needsPrompt(onboardingCompleted: true))
+        // new users answer in onboarding instead
+        #expect(!TelemetryConsent.undecided.needsPrompt(onboardingCompleted: false))
+        // an explicit choice either way is kept
+        #expect(!TelemetryConsent.optedIn.needsPrompt(onboardingCompleted: true))
+        #expect(!TelemetryConsent.optedOut.needsPrompt(onboardingCompleted: true))
+    }
+
+    @Test("Usage data settings show telemetry as off until the user opts in") func diagnosticsOptionReflectsConsent() {
+        #expect(DiagnosticsSharingOption(crashlyticsEnabled: true, telemetryEnabled: TelemetryConsent(flag: nil).allowsSending) ==
+            .crashOnly)
+        #expect(DiagnosticsSharingOption(crashlyticsEnabled: true, telemetryEnabled: TelemetryConsent(flag: true).allowsSending) ==
+            .full)
+        #expect(!DiagnosticsSharingOption.crashOnly.telemetryEnabled)
+        #expect(!DiagnosticsSharingOption.disabled.telemetryEnabled)
     }
 }
 

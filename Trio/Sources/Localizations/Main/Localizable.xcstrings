@@ -1095,11 +1095,17 @@
     "Adds 5 grams" : {
       "comment" : "Accessibility hint for the watch carbs plus button"
     },
+    "App version and build, device model and iOS version, language and time zone, the paired pump and CGM models, whether Nightscout, Tidepool and Apple Health are set up (yes/no only), a few app settings (units, closed loop on/off, Live Activity, calendar), and random identifiers for this install." : {
+      "comment" : "Usage data sharing explanation: what is sent"
+    },
     "Bolus amount" : {
 
     },
     "Bolus confirmation" : {
       "comment" : "Accessibility label for the watch bolus confirmation bar"
+    },
+    "Choose whether Trio may share anonymous usage data with the Trio team." : {
+      "comment" : "Onboarding step description for the usage data sharing choice"
     },
     "Decrease bolus" : {
 
@@ -1107,8 +1113,14 @@
     "Decrease carbs" : {
 
     },
+    "Don't Share" : {
+      "comment" : "Choice that declines the daily anonymous usage report"
+    },
     "Enacting Bolus..." : {
       "comment" : "Watch progress while a bolus is sent"
+    },
+    "Glucose, insulin, carbs or any other health data, therapy settings, logs, and your Nightscout, Tidepool or other credentials." : {
+      "comment" : "Usage data sharing explanation: what is never sent"
     },
     "HIGH" : {
       "comment" : "Shown instead of the glucose value at the top of the sensor range"
@@ -1134,8 +1146,26 @@
     "no recent loop" : {
       "comment" : "Accessibility: IOB hint when Trio has not looped for over a day"
     },
+    "Not Now" : {
+      "comment" : "Closes the usage data prompt without choosing"
+    },
+    "Nothing is sent unless you agree. You can change this at any time in Settings > Features > App Diagnostics, where you can also see the exact report." : {
+      "comment" : "Usage data sharing explanation"
+    },
+    "Nothing is sent until you choose. Tap to decide." : {
+      "comment" : "Home panel asking existing users for their usage data sharing choice"
+    },
     "outdated" : {
       "comment" : "Accessibility: a glucose reading that is no longer current"
+    },
+    "Send the daily anonymous usage report." : {
+      "comment" : "Onboarding usage data option caption"
+    },
+    "Share Usage Data" : {
+      "comment" : "Choice that allows the daily anonymous usage report"
+    },
+    "Share Usage Data?" : {
+      "comment" : "Title of the usage data sharing prompt"
     },
     "Stabilizing" : {
       "comment" : "CGM sensor status tag on the glucose bobble"
@@ -1164,11 +1194,32 @@
     "To confirm, swipe up on the bar until it is full." : {
       "comment" : "Watch bolus confirmation with VoiceOver"
     },
+    "Trio can send the Trio team a small, anonymous usage report once a day. It helps the team see which app versions, devices, pumps and CGMs are in use, so testing and support can focus on what people actually run." : {
+      "comment" : "Usage data sharing explanation"
+    },
+    "Trio sends no usage data." : {
+      "comment" : "Onboarding usage data option caption"
+    },
     "updated at %@" : {
       "comment" : "Accessibility: Live Activity update time; %@ is a clock time"
     },
+    "Usage Data" : {
+      "comment" : "Onboarding step title for the usage data sharing choice"
+    },
+    "Usage data is only sent if you agree to it. Until you choose, and whenever it is switched off, Trio makes no telemetry requests at all. Crash reporting is on unless you switch it off. Use the diagnostics-sharing chooser above: \"Enable Full Sharing\" shares crash reports and usage data, \"Crash Reports Only\" keeps crash reporting without usage data, and \"Disable Sharing\" turns off both. Changes take effect immediately." : {
+      "comment" : "Telemetry privacy details"
+    },
     "Warming up" : {
       "comment" : "CGM sensor status tag on the glucose bobble"
+    },
+    "We need to make sure you are the owner of the device." : {
+      "comment" : "Reason shown in the Face ID / Touch ID / passcode prompt before a bolus or deleting an insulin entry"
+    },
+    "What is never sent" : {
+      "comment" : "Heading in the usage data sharing explanation"
+    },
+    "Your choice" : {
+      "comment" : "Heading in the telemetry privacy details"
     },
     " " : {
       "localizations" : {

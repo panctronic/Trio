@@ -11,36 +11,31 @@ extension AppDiagnostics {
             loadDiagnostics()
         }
 
-        /// Derives the 3-state option from the two underlying flags. Both
-        /// streams are enabled by default (`nil` ⇒ on), so an untouched
-        /// install surfaces `.full` until the user opts out here.
+        /// Derives the 3-state option from the two underlying flags. Crash
+        /// reporting is on unless switched off (`nil` ⇒ on); usage telemetry is
+        /// opt-in, so it only counts as on after an explicit yes (`nil` ⇒ off).
         func loadDiagnostics() {
             let crashlytics = PropertyPersistentFlags.shared.crashlyticsSharingEnabled ?? true
-            let telemetry = PropertyPersistentFlags.shared.telemetrySharingEnabled ?? true
+            let telemetry = TelemetryConsent.current.allowsSending
             diagnosticsSharingOption = DiagnosticsSharingOption(
                 crashlyticsEnabled: crashlytics,
                 telemetryEnabled: telemetry
             )
         }
 
-        /// Persists the current diagnostics sharing option to both underlying flags
-        /// and applies it to Crashlytics + the telemetry sender.
-        func applyDiagnostics() {
-            let wasTelemetryOn = PropertyPersistentFlags.shared.telemetrySharingEnabled != false
-
-            PropertyPersistentFlags.shared.crashlyticsSharingEnabled = diagnosticsSharingOption.crashlyticsEnabled
-            PropertyPersistentFlags.shared.telemetrySharingEnabled = diagnosticsSharingOption.telemetryEnabled
+        /// Called when the user picks an option: persists it to both underlying
+        /// flags and applies it to Crashlytics and the telemetry sender. Only a
+        /// tap calls this, so merely opening the screen never records a choice.
+        func select(_ option: DiagnosticsSharingOption) {
+            diagnosticsSharingOption = option
+            PropertyPersistentFlags.shared.crashlyticsSharingEnabled = option.crashlyticsEnabled
 
             // Opting out also drops whatever GoogleDataTransport already queued,
             // so no crash-reporting upload survives the switch.
-            CrashReportingGate.setEnabled(diagnosticsSharingOption.crashlyticsEnabled)
+            CrashReportingGate.setEnabled(option.crashlyticsEnabled)
 
-            // Fire an inaugural send on a fresh re-opt-in so the first data
-            // point arrives immediately rather than 24h later.
-            if diagnosticsSharingOption.telemetryEnabled, !wasTelemetryOn {
-                TelemetryClient.shared.scheduleRecurring()
-                Task.detached { await TelemetryClient.shared.maybeSend(reason: .optIn) }
-            }
+            // Stores the explicit choice; a fresh opt-in sends right away rather than 24h later.
+            TelemetryClient.recordConsent(option.telemetryEnabled)
         }
     }
 }
@@ -53,7 +48,7 @@ extension AppDiagnostics.StateModel: SettingsObserver {
 ///
 /// Maps to a pair of independent `Bool?` flags in `PropertyPersistentFlags`:
 /// `crashlyticsSharingEnabled` (Crashlytics) and `telemetrySharingEnabled`
-/// (the anonymous-usage POST). See `TelemetryClient`.
+/// (the opt-in usage check-in). See `TelemetryClient`.
 enum DiagnosticsSharingOption: String, Equatable, CaseIterable, Identifiable {
     case full
     case crashOnly

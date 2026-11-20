@@ -648,6 +648,9 @@ extension Home.RootView {
             maxIOB: state.maxIOB,
             tidepoolLoginRequired: state.tidepoolLoginRequired,
             hasUnacknowledgedReleaseNotes: releaseNotesService.hasUnacknowledgedNotes,
+            telemetryConsentUndecided: telemetryConsent.needsPrompt(
+                onboardingCompleted: PropertyPersistentFlags.shared.onboardingCompleted != false
+            ),
             dosingMode: state.dosingMode,
             now: state.timerDate
         )
@@ -750,6 +753,18 @@ extension Home.RootView {
                 tint: .orange
             ) {
                 openTidepoolSetting()
+            }
+        case .telemetryConsent:
+            panelBanner(
+                systemImage: "chart.bar.doc.horizontal.fill",
+                title: String(localized: "Share Usage Data?"),
+                subtitle: String(
+                    localized: "Nothing is sent until you choose. Tap to decide.",
+                    comment: "Home panel asking existing users for their usage data sharing choice"
+                ),
+                tint: .insulin
+            ) {
+                showTelemetryConsent = true
             }
         case .whatsNew:
             panelBanner(

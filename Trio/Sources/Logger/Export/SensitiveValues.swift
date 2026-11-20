@@ -105,6 +105,11 @@ struct SensitiveValues {
         }
     }
 
+    /// Values that already went through `add(_:_:)` (encoded forms included), e.g. remembered ones.
+    mutating func add(exact: [Redactor.ExactValue]) {
+        values.append(contentsOf: exact)
+    }
+
     mutating func addNightscout(url: String?, secret: String?) {
         if let url = url?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
             // Without the trailing slash, so request paths keep theirs
@@ -118,8 +123,10 @@ struct SensitiveValues {
         }
     }
 
-    mutating func addTrioIdentifiers(defaults: UserDefaults = .standard) {
-        add(defaults.string(forKey: "trioRemoteControlSharedSecret"), .remoteSecret)
+    mutating func addTrioIdentifiers(remoteSecret: String? = nil, defaults: UserDefaults = .standard) {
+        add(remoteSecret, .remoteSecret)
+        // where versions before the Keychain move kept it, in case it hasn't been moved yet
+        add(defaults.string(forKey: RemoteControlSecretStore.key), .remoteSecret)
         add(defaults.string(forKey: "deviceToken"), .pushToken)
         add(PropertyPersistentFlags.shared.telemetryInstallId, .installID)
     }

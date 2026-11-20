@@ -278,16 +278,36 @@ final class LogExport: Injectable {
         return values.values
     }
 
-    @MainActor private func currentSensitiveValues() -> SensitiveValues {
-        var values = storedValues
+    /// Account credentials in use now: Nightscout, Tidepool, the remote control secret and Trio's own identifiers.
+    @MainActor private func currentCredentials() -> SensitiveValues {
+        var values = SensitiveValues()
         if let keychain {
             values.addNightscout(
                 url: keychain.getValue(String.self, forKey: NightscoutConfig.Config.urlKey),
                 secret: keychain.getValue(String.self, forKey: NightscoutConfig.Config.secretKey)
             )
-            values.addTrioIdentifiers()
+            values.addTrioIdentifiers(remoteSecret: RemoteControlSecretStore.secret(keychain: keychain))
         }
         values.add(tidepool: tidepoolManager?.getTidepoolServiceUI() as? TidepoolService)
+        return values
+    }
+
+    /// Remembers the credentials in use now, so exports keep redacting them for as long as logs are kept after they
+    /// are replaced. Called whenever the app becomes active and on every export.
+    @MainActor func rememberCurrentCredentials() {
+        guard let keychain else { return }
+        CredentialHistory.record(currentCredentials().values, keychain: keychain)
+    }
+
+    @MainActor private func currentSensitiveValues() -> SensitiveValues {
+        var values = storedValues
+        let credentials = currentCredentials()
+        values.add(exact: credentials.values)
+        if let keychain {
+            CredentialHistory.record(credentials.values, keychain: keychain)
+            // replaced credentials that may still be in the retained logs
+            values.add(exact: CredentialHistory.recentValues(keychain: keychain))
+        }
         let (pump, cgm) = currentManagers()
         for manager in [pump, cgm].compactMap({ $0 }) {
             values.add(manager)
