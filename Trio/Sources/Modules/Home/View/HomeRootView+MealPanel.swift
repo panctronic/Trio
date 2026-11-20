@@ -120,16 +120,35 @@ extension Home.RootView {
             ))
 
             HStack {
-                HStack {
-                    Image(systemName: "syringe.fill")
-                        .font(.callout)
-                        .foregroundColor(Color.insulin)
-                    Text(state.currentIOB.formattedIOB() + String(localized: " U", comment: "Insulin unit"))
-                        .font(.callout).fontWeight(.bold).fontDesign(.rounded)
+                let loopAgeHint = IOBLoopAgeHint(lastLoopDate: state.lastLoopDate, now: state.timerDate)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Image(systemName: "syringe.fill")
+                            .font(.callout)
+                            .foregroundColor(Color.insulin)
+                        Text(state.currentIOB.formattedIOB() + String(localized: " U", comment: "Insulin unit"))
+                            .font(.callout).fontWeight(.bold).fontDesign(.rounded)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    // Display only: IOB comes from the last loop, so say how old it is once that loop is overdue.
+                    // Kept narrow and under the value so it can't run into the centred COB.
+                    if let loopAgeHint {
+                        Text(loopAgeHint.text)
+                            .font(.caption2).fontWeight(.semibold)
+                            .foregroundStyle(Color.orange)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: 110, alignment: .leading)
+                    }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text("Insulin on board"))
-                .accessibilityValue(Text(state.currentIOB.formattedIOB() + " " + UnitSpelling.spoken("U")))
+                .accessibilityValue(Text(
+                    [state.currentIOB.formattedIOB() + " " + UnitSpelling.spoken("U"), loopAgeHint?.spokenText]
+                        .compactMap { $0 }
+                        .joined(separator: ", ")
+                ))
 
                 Spacer()
 
@@ -190,5 +209,50 @@ extension Home.RootView {
         ))
         .accessibilityHint(Text(String(localized: "Opens snooze options", comment: "Accessibility hint")))
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Hint under the IOB value on Home once the last loop is overdue. IOB is recalculated by the loop, so when the loop
+/// has not run for a while the value may not include recent insulin or decay. Display only; nothing reads it.
+struct IOBLoopAgeHint: Equatable {
+    /// Two loop cycles: one missed cycle is normal, two means the value may be lagging.
+    static let threshold: TimeInterval = 10 * 60
+    /// Beyond a day the age stops being useful (and `lastLoopDate` is `.distantPast` before the first loop).
+    static let maxShownAge: TimeInterval = 24 * 60 * 60
+
+    /// nil when the age is unknown or too old to show
+    let lastLoopDate: Date?
+    let now: Date
+
+    /// nil while the last loop is recent.
+    init?(lastLoopDate: Date, now: Date) {
+        let age = now.timeIntervalSince(lastLoopDate)
+        guard age > Self.threshold else { return nil }
+        self.lastLoopDate = age <= Self.maxShownAge ? lastLoopDate : nil
+        self.now = now
+    }
+
+    /// "Last loop 15 min ago", or "No recent loop"
+    var text: String {
+        guard let lastLoopDate else {
+            return String(localized: "No recent loop", comment: "Hint under IOB on Home when Trio has not looped for over a day")
+        }
+        let age = Duration.seconds(now.timeIntervalSince(lastLoopDate)).formattedTimeSpan(.largestTwoUnits)
+        return String(
+            localized: "Last loop \(age) ago",
+            comment: "Hint under IOB on Home when the last loop is overdue; %@ is a short duration like \"15 min\""
+        )
+    }
+
+    /// "last loop 15 minutes ago", or "no recent loop"
+    var spokenText: String {
+        guard let lastLoopDate else {
+            return String(localized: "no recent loop", comment: "Accessibility: IOB hint when Trio has not looped for over a day")
+        }
+        let age = Duration.seconds(now.timeIntervalSince(lastLoopDate)).formattedSpokenTimeSpan(.largestTwoUnits)
+        return String(
+            localized: "last loop \(age) ago",
+            comment: "Accessibility: IOB hint when the last loop is overdue; %@ is a duration like \"15 minutes\""
+        )
     }
 }

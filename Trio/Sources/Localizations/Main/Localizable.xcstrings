@@ -1089,6 +1089,18 @@
         }
       }
     },
+    "Last loop %@ ago" : {
+      "comment" : "Hint under IOB on Home when the last loop is overdue; %@ is a short duration like \"15 min\""
+    },
+    "last loop %@ ago" : {
+      "comment" : "Accessibility: IOB hint when the last loop is overdue; %@ is a duration like \"15 minutes\""
+    },
+    "No recent loop" : {
+      "comment" : "Hint under IOB on Home when Trio has not looped for over a day"
+    },
+    "no recent loop" : {
+      "comment" : "Accessibility: IOB hint when Trio has not looped for over a day"
+    },
     " " : {
       "localizations" : {
         "bg" : {

@@ -490,6 +490,7 @@
 		7A11AC0DE000000000000113 /* MultiUsePanelState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE000000000000013 /* MultiUsePanelState.swift */; };
 		7A11AC0DE000000000000114 /* ManualGlucoseEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE000000000000014 /* ManualGlucoseEntryView.swift */; };
 		7A11AC0DE000000000000115 /* MultiUsePanelStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE000000000000015 /* MultiUsePanelStateTests.swift */; };
+		7B0C5A110000000000000100 /* HomeDisplayHintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0C5A110000000000000001 /* HomeDisplayHintTests.swift */; };
 		7A11AC0DE000000000000116 /* GlassChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE000000000000016 /* GlassChrome.swift */; };
 		7A11AC0DE00000000000011D /* PumpEventPredicateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE00000000000001D /* PumpEventPredicateTests.swift */; };
 		7A11AC0DE000000000000171 /* GlassActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AC0DE000000000000170 /* GlassActionSheet.swift */; };
@@ -1759,6 +1760,7 @@
 		7A11AC0DE000000000000013 /* MultiUsePanelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiUsePanelState.swift; sourceTree = "<group>"; };
 		7A11AC0DE000000000000014 /* ManualGlucoseEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualGlucoseEntryView.swift; sourceTree = "<group>"; };
 		7A11AC0DE000000000000015 /* MultiUsePanelStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiUsePanelStateTests.swift; sourceTree = "<group>"; };
+		7B0C5A110000000000000001 /* HomeDisplayHintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeDisplayHintTests.swift; sourceTree = "<group>"; };
 		7A11AC0DE000000000000016 /* GlassChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassChrome.swift; sourceTree = "<group>"; };
 		7A11AC0DE00000000000001D /* PumpEventPredicateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PumpEventPredicateTests.swift; sourceTree = "<group>"; };
 		7A11AC0DE000000000000120 /* HomeStatsPanelFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeStatsPanelFace.swift; sourceTree = "<group>"; };
@@ -4501,6 +4503,7 @@
 				7A11AC0DE000000000000009 /* PumpEventFinalizationTests.swift */,
 				7A11AC0DE00000000000001D /* PumpEventPredicateTests.swift */,
 				7A11AC0DE000000000000015 /* MultiUsePanelStateTests.swift */,
+				7B0C5A110000000000000001 /* HomeDisplayHintTests.swift */,
 				BD8FC0582D66189700B95AED /* TestAssembly.swift */,
 				BD8FC05A2D6618AF00B95AED /* DeterminationStorageTests.swift */,
 				BD8FC05F2D6619DB00B95AED /* CarbsStorageTests.swift */,
@@ -6780,6 +6783,7 @@
 				7A11AC0DE000000000000109 /* PumpEventFinalizationTests.swift in Sources */,
 				7A11AC0DE00000000000011D /* PumpEventPredicateTests.swift in Sources */,
 				7A11AC0DE000000000000115 /* MultiUsePanelStateTests.swift in Sources */,
+				7B0C5A110000000000000100 /* HomeDisplayHintTests.swift in Sources */,
 				BD8FC0642D6619EF00B95AED /* TempTargetStorageTests.swift in Sources */,
 				FE9C3A9F2A75014FB09A16B1 /* CoreDataProtectedDataTests.swift in Sources */,
 				3BE2F1E82E030E2F009E2900 /* MealCobTests.swift in Sources */,
