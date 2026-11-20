@@ -3,14 +3,9 @@ run-name: Create Certificates (${{ github.ref_name }})
 
 on: [workflow_call, workflow_dispatch]
 
-env:
-  TEAMID: ${{ secrets.TEAMID }}
-  GH_PAT: ${{ secrets.GH_PAT }}
-  GH_TOKEN: ${{ secrets.GH_PAT }}
-  MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-  FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
-  FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
-  FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+# Secrets (GH_PAT, MATCH_PASSWORD, App Store Connect key, ...) are passed only to
+# the Fastlane steps that need them, never workflow-wide, so steps such as
+# `bundle install` and the Match patch never run with them in their environment.
 
 jobs:
   validate:
@@ -47,11 +42,27 @@ jobs:
 
       # Create or update Distribution certificate and provisioning profiles
       - name: Check and create or update Distribution certificate and profiles if needed
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
         run: |
           echo "Running Fastlane certs lane..."
           bundle exec fastlane certs || true # ignore and continue on errors without annotating an exit code
 
       - name: Check Distribution certificate and launch Nuke certificates if needed
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
         run: bundle exec fastlane check_and_renew_certificates
         id: check_certs
 
@@ -103,11 +114,27 @@ jobs:
           run: bundle install
 
         - name: Run Fastlane nuke_certs
+          env:
+            TEAMID: ${{ secrets.TEAMID }}
+            GH_PAT: ${{ secrets.GH_PAT }}
+            GH_TOKEN: ${{ secrets.GH_PAT }}
+            MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+            FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+            FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+            FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
           run: |
             set -e # Set error immediately after this step if error occurs
             bundle exec fastlane nuke_certs
 
         - name: Recreate Distribution certificate after nuking
+          env:
+            TEAMID: ${{ secrets.TEAMID }}
+            GH_PAT: ${{ secrets.GH_PAT }}
+            GH_TOKEN: ${{ secrets.GH_PAT }}
+            MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+            FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+            FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+            FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
           run: |
             set -e # Set error immediately after this step if error occurs
             bundle exec fastlane certs
