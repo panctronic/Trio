@@ -129,7 +129,12 @@ extension Notification.Name {
 
     init() {
         TrioLogger.install(AppLogStore.shared)
-        FileProtectionFixer.fixFlagFileProtectionForPropertyPersistentFlags() // TODO: ‼️ REMOVE ME BEFORE PUBLIC BETA / RELEASE
+        // One-way migration for flag files written before PersistedProperty set
+        // FileProtectionType.none on save: with the default protection they could not be read
+        // before the first unlock after a reboot, so e.g. onboarding looked incomplete. Cheap (a
+        // dozen attribute writes on existing files); keep it while upgrades from those builds
+        // are supported.
+        FileProtectionFixer.fixFlagFileProtectionForPropertyPersistentFlags()
 
         let notificationCenter = Foundation.NotificationCenter.default
         notificationCenter.addObserver(
