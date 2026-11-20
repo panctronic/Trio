@@ -1113,6 +1113,9 @@
     "Are you sure to log %@ U of external insulin?" : {
 
     },
+    "Bolus not enacted: the carbs entered with it were not logged." : {
+      "comment" : "Watch message when a bolus is refused because its carbs were refused or not saved"
+    },
     "Bolus of %@ U not delivered. %@" : {
       "comment" : "Shortcut result when the bolus was refused or failed; the second argument is the reason"
     },

@@ -21,6 +21,9 @@ enum WatchMessageKeys {
     static let overriddenBolusChecks = "overriddenBolusChecks"
     /// When the phone asked the Watch to confirm a bolus past a safety check, on the phone's clock, sent back unchanged
     static let bolusOverrideIssuedAt = "bolusOverrideIssuedAt"
+    /// Sent with a bolus that belongs to carbs sent just before it: the carbs' `date`, so the phone can refuse the bolus
+    /// when those carbs were not logged
+    static let mealDate = "mealDate"
 
     // Recommendation Keys
     static let requestBolusRecommendation = "requestBolusRecommendation"

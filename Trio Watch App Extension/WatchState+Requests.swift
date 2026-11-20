@@ -29,7 +29,8 @@ extension WatchState {
         if carbs > 0 {
             sendCarbsRequest(carbs, now)
         }
-        sendBolusRequest(Decimal(amount))
+        // Tied to the carbs, so the phone gives no bolus if it refuses or cannot save them
+        sendBolusRequest(Decimal(amount), mealDate: carbs > 0 ? now : nil)
     }
 
     /// Sends a carbs-only entry ("Log Carbs"). Refuses an entry older than `entryLifetime` and clears it instead.
@@ -52,7 +53,8 @@ extension WatchState {
     /// - Parameters:
     ///   - amount: The insulin amount to be delivered
     ///   - pendingOverride: The phone's request to confirm past failed safety checks, if the user just confirmed it
-    func sendBolusRequest(_ amount: Decimal, confirming pendingOverride: PendingBolusOverride? = nil) {
+    ///   - mealDate: The date of the carbs sent just before as part of the same entry, if any
+    func sendBolusRequest(_ amount: Decimal, confirming pendingOverride: PendingBolusOverride? = nil, mealDate: Date? = nil) {
         pendingBolusOverride = nil
 
         guard amount > 0 else {
@@ -71,6 +73,9 @@ extension WatchState {
         var message: [String: Any] = [
             WatchMessageKeys.bolus: amount
         ]
+        if let mealDate {
+            message[WatchMessageKeys.mealDate] = mealDate.timeIntervalSince1970
+        }
         if let pendingOverride {
             message[WatchMessageKeys.overriddenBolusChecks] = pendingOverride.overriddenChecks
             message[WatchMessageKeys.bolusOverrideIssuedAt] = pendingOverride.issuedAt

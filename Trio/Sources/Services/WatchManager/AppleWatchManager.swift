@@ -22,6 +22,9 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     @Injected() private var glucoseStorage: GlucoseStorage!
     @Injected() private var determinationStorage: DeterminationStorage!
     @Injected() private var carbsStorage: CarbsStorage!
+
+    /// Outcome (logged or not) of recent Watch carb entries, by their date, for the bolus the Watch sends with them
+    @MainActor private var watchCarbsOutcomes: [TimeInterval: Task<Bool, Never>] = [:]
     @Injected() private var overrideStorage: OverrideStorage!
     @Injected() private var tempTargetStorage: TempTargetsStorage!
     @Injected() private var adjustmentManager: AdjustmentManager!
@@ -700,7 +703,11 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
                       message[WatchMessageKeys.date] == nil
             {
                 info(.watch, "Watch requested bolus of \(bolusAmount) U")
-                self.handleBolusRequest(Decimal(bolusAmount), overriding: self.overriddenBolusChecks(in: message))
+                self.handleBolusRequest(
+                    Decimal(bolusAmount),
+                    overriding: self.overriddenBolusChecks(in: message),
+                    mealDate: message[WatchMessageKeys.mealDate] as? TimeInterval
+                )
             } else if let carbsAmount = message[WatchMessageKeys.carbs] as? Int,
                       let timestamp = message[WatchMessageKeys.date] as? TimeInterval,
                       message[WatchMessageKeys.bolus] == nil
@@ -855,8 +862,23 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     /// - Parameters:
     ///   - amount: The requested bolus amount in units
     ///   - overriding: Safety checks the user has confirmed on the Watch to bolus through
-    private func handleBolusRequest(_ amount: Decimal, overriding: Set<BolusSafetyCheck>) {
+    ///   - mealDate: The date of the carbs sent just before as part of the same entry, if any
+    @MainActor private func handleBolusRequest(_ amount: Decimal, overriding: Set<BolusSafetyCheck>, mealDate: TimeInterval?) {
         Task {
+            // The bolus was worked out for those carbs: none if they were refused or could not be saved
+            if let mealDate, await !watchCarbsWereLogged(at: mealDate) {
+                info(.watch, "Watch bolus of \(amount) U refused: the carbs entered with it were not logged")
+                sendAcknowledgment(
+                    toWatch: false,
+                    message: String(
+                        localized: "Bolus not enacted: the carbs entered with it were not logged.",
+                        comment: "Watch message when a bolus is refused because its carbs were refused or not saved"
+                    ),
+                    ackCode: .genericFailure
+                )
+                return
+            }
+
             guard await passesBolusSafetyChecks(amount, overriding: overriding) else { return }
 
             await apsManager.enactBolus(amount: Double(amount), isSMB: false) { success, message in
@@ -955,18 +977,18 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
     /// - Parameters:
     ///   - amount: The carbs amount in grams
     ///   - date: Timestamp for the carbs entry
-    private func handleCarbsRequest(_ amount: Int, _ date: Date) {
-        Task {
+    @MainActor private func handleCarbsRequest(_ amount: Int, _ date: Date) {
+        let outcome = Task { () -> Bool in
             let carbs = Decimal(amount)
             if let rejection = Self.watchCarbsRejection(carbs: carbs, maxCarbs: settingsManager.settings.maxCarbs) {
                 info(.watch, "Watch carbs of \(amount) g rejected: \(rejection)")
                 sendAcknowledgment(toWatch: false, message: rejection, ackCode: .genericFailure)
-                return
+                return false
             }
 
             guard await storeWatchCarbs(carbs, date: date) else {
                 sendAcknowledgment(toWatch: false, message: Self.carbsNotSavedMessage, ackCode: .genericFailure)
-                return
+                return false
             }
             sendAcknowledgment(
                 toWatch: true,
@@ -976,8 +998,33 @@ final class BaseWatchManager: NSObject, WCSessionDelegate, Injectable, WatchMana
                 ),
                 ackCode: .carbsLogged
             )
-            await updateDeterminationAfterWatchCarbs()
+            Task { await self.updateDeterminationAfterWatchCarbs() }
+            return true
         }
+
+        // A bolus sent with these carbs looks up whether they were logged
+        let now = Date().timeIntervalSince1970
+        watchCarbsOutcomes = watchCarbsOutcomes.filter { now - $0.key < Self.watchCarbsOutcomeLifetime }
+        watchCarbsOutcomes[date.timeIntervalSince1970] = outcome
+    }
+
+    /// How long the outcome of Watch carbs is kept for the bolus sent with them.
+    private static let watchCarbsOutcomeLifetime: TimeInterval = 5 * 60
+    /// How long a bolus waits for the carbs sent just before it, which may still be on their way.
+    private static let watchCarbsArrivalWait: TimeInterval = 5
+
+    /// Whether the Watch carbs dated `mealDate` were logged. Waits briefly for carbs not received yet;
+    /// carbs that never arrive count as not logged, so their bolus is not given either.
+    @MainActor private func watchCarbsWereLogged(at mealDate: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(Self.watchCarbsArrivalWait)
+        while watchCarbsOutcomes[mealDate] == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard let outcome = watchCarbsOutcomes[mealDate] else {
+            warning(.watch, "Carbs for a watch bolus never arrived")
+            return false
+        }
+        return await outcome.value
     }
 
     /// Handles combined bolus and carbs entry requests received from the Watch.
