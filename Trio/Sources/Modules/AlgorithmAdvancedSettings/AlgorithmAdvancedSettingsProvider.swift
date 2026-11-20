@@ -37,10 +37,7 @@ extension AlgorithmAdvancedSettings {
                 save(settings)
                 return Just(()).setFailureType(to: Error.self).eraseToAnyPublisher()
             }
-            let limits = DeliveryLimits(
-                maximumBasalRate: LoopQuantity(unit: .internationalUnitsPerHour, doubleValue: Double(settings.maxBasal)),
-                maximumBolus: LoopQuantity(unit: .internationalUnit, doubleValue: Double(settings.maxBolus))
-            )
+            let limits = settings.deliveryLimits
             return Future { promise in
                 self.processQueue.async {
                     pump.syncDeliveryLimits(limits: limits) { result in

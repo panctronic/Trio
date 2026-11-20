@@ -116,11 +116,7 @@ final class BaseDeviceDataManager: DeviceDataManager, Injectable {
                 // may use a stale or default value from deserialized state
                 // — silently rejecting temp basals that oref correctly
                 // determines are within the user's configured maxBasal.
-                let pumpSettings = settingsManager.pumpSettings
-                let deliveryLimits = DeliveryLimits(
-                    maximumBasalRate: LoopQuantity(unit: .internationalUnitsPerHour, doubleValue: Double(pumpSettings.maxBasal)),
-                    maximumBolus: LoopQuantity(unit: .internationalUnit, doubleValue: Double(pumpSettings.maxBolus))
-                )
+                let deliveryLimits = settingsManager.pumpSettings.deliveryLimits
 
                 processQueue.async {
                     pumpManager.syncDeliveryLimits(limits: deliveryLimits) { result in
