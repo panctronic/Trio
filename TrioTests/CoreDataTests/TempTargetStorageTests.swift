@@ -174,8 +174,9 @@ import Testing
             let stale = TempTargetRunStored(context: self.testContext)
             stale.id = UUID()
             stale.name = "Stale"
-            stale.startDate = now.addingTimeInterval(-72 * hour)
-            stale.endDate = now.addingTimeInterval(-48 * hour)
+            // Ended before the Nightscout upload window (7 days), so it is not retried any more.
+            stale.startDate = now.addingTimeInterval(-11 * 24 * hour)
+            stale.endDate = now.addingTimeInterval(-10 * 24 * hour)
             stale.target = 140
             stale.isUploadedToNS = false
 
@@ -196,7 +197,7 @@ import Testing
         // Then
         #expect(
             Set(runs.compactMap(\.createdAt)) == [recentStart, longRunningStart],
-            "Runs that ended within the last day are uploaded, whenever they started"
+            "Runs that ended within the upload window are uploaded, whenever they started"
         )
 
         let longRunning = try #require(runs.first { $0.createdAt == longRunningStart })
