@@ -1,0 +1,11 @@
+# Paths SwiftFormat must never touch; used by scripts/swiftformat.sh (and any
+# other swiftformat run in this repository). Every git submodule is listed:
+# their code follows its upstream's style and must not be reformatted here.
+# Keep this in sync with .gitmodules when adding a submodule.
+#
+# Exclusions live in this file rather than as --exclude arguments because
+# SwiftFormat resolves command-line exclusions against the current directory,
+# which silently fails to match when the checkout is reached through a
+# symlinked path (e.g. /tmp -> /private/tmp on macOS); paths in this file are
+# resolved relative to the file itself.
+--exclude Pods,Generated,R.generated.swift,fastlane/swift,Dependencies,AccuChekKit,CGMBLEKit,DanaKit,EversenseKit,G7SensorKit,LibreLoop,LibreTransmitter,LoopKit,MedtrumKit,MinimedKit,OmnipodKit,RileyLinkKit,RoundWhiteDiscKit,SyaiKit,TidepoolService,dexcom-share-client-swift

@@ -16,8 +16,9 @@
 #   With no paths it checks the whole of ${SRCROOT}.
 #
 # SRCROOT defaults to the repository root when the script is run by hand.
-# Run it from the repository root: the --exclude paths below are relative to
-# the current directory.
+# Excluded paths (all git submodules, generated code) are listed in the
+# .swiftformat file at the repository root, which SwiftFormat applies to every
+# file under it, so submodules are never reformatted.
 
 SWIFTFORMAT_MODE=format
 if [ "$1" = "--lint" ]; then
@@ -138,26 +139,4 @@ trailingClosures \
 --funcattributes same-line \
 --typeattributes same-line \
 --varattributes same-line \
---wrapcollections before-first \
---exclude Pods \
---exclude Generated \
---exclude R.generated.swift \
---exclude fastlane/swift \
---exclude Dependencies \
---exclude LoopKit \
---exclude LibreTransmitter \
---exclude G7SensorKit \
---exclude dexcom-share-client-swift \
---exclude CGMBLEKit \
---exclude RileyLinkKit \
---exclude MinimedKit \
---exclude TidepoolService \
---exclude DanaKit \
---exclude MedtrumKit \
---exclude OmnipodKit \
---exclude LibreLoop \
---exclude RoundWhiteDiscKit \
---exclude AccuChekKit \
---exclude EversenseKit \
---exclude SyaiKit
-      
+--wrapcollections before-first
