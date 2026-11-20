@@ -6,7 +6,7 @@ import Swinject
 /// Represents an override preset that can be used in the app.
 struct OverridePreset: AppEntity, Identifiable {
     /// Default query instance for fetching override presets.
-    static var defaultQuery = OverridePresetsQuery()
+    static let defaultQuery = OverridePresetsQuery()
 
     /// Unique identifier for the override preset.
     var id: String
@@ -20,7 +20,7 @@ struct OverridePreset: AppEntity, Identifiable {
     }
 
     /// Representation for the entity type when displayed in UI.
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Override"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Override"
 }
 
 /// Query structure for fetching override presets in an App Intent.

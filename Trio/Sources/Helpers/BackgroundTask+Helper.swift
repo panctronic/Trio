@@ -1,3 +1,4 @@
+import os
 import UIKit
 
 /// Ends a background task safely and ensures it is not called multiple times.
@@ -49,47 +50,45 @@ func startBackgroundTask(withName name: String) -> UIBackgroundTaskIdentifier {
 }
 
 /// Hands the identifier returned by `beginBackgroundTask` to its own expiration handler.
-final class BackgroundTaskIDBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var taskID: UIBackgroundTaskIdentifier = .invalid
-    private var expired = false
+final class BackgroundTaskIDBox: Sendable {
+    private struct State {
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        var expired = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
 
     /// Records the identifier. If the expiration handler already ran, `onAlreadyExpired` ends it.
     func set(_ id: UIBackgroundTaskIdentifier, onAlreadyExpired: (UIBackgroundTaskIdentifier) -> Void) {
-        lock.lock()
-        taskID = id
-        let alreadyExpired = expired
-        lock.unlock()
+        let alreadyExpired = state.withLock { state in
+            state.taskID = id
+            return state.expired
+        }
         if alreadyExpired, id != .invalid { onAlreadyExpired(id) }
     }
 
     /// Called from the expiration handler; runs `end` with the identifier once it is known.
     func expire(_ end: (UIBackgroundTaskIdentifier) -> Void) {
-        lock.lock()
-        expired = true
-        let id = taskID
-        lock.unlock()
+        let id = state.withLock { state in
+            state.expired = true
+            return state.taskID
+        }
         if id != .invalid { end(id) }
     }
 }
 
 /// Identifiers ended by their expiration handler, so the owner's later
 /// `endBackgroundTaskSafely` does not end them a second time.
-final class BackgroundTaskRegistry: @unchecked Sendable {
+final class BackgroundTaskRegistry: Sendable {
     static let shared = BackgroundTaskRegistry()
-    private let lock = NSLock()
-    private var expiredIDs = Set<UIBackgroundTaskIdentifier>()
+    private let expiredIDs = OSAllocatedUnfairLock(initialState: Set<UIBackgroundTaskIdentifier>())
 
     func markExpired(_ id: UIBackgroundTaskIdentifier) {
-        lock.lock()
-        expiredIDs.insert(id)
-        lock.unlock()
+        _ = expiredIDs.withLock { $0.insert(id) }
     }
 
     /// Returns whether `id` was ended on expiry, forgetting it either way.
     func consumeExpired(_ id: UIBackgroundTaskIdentifier) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return expiredIDs.remove(id) != nil
+        expiredIDs.withLock { $0.remove(id) != nil }
     }
 }

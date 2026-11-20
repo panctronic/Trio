@@ -109,7 +109,7 @@ class CoreDataStack: ObservableObject {
     }
 
     // Shared managed object model
-    static var managedObjectModel: NSManagedObjectModel = {
+    static let managedObjectModel: NSManagedObjectModel = {
         let bundle = Bundle(for: CoreDataStack.self)
         guard let url = bundle.url(forResource: "TrioCoreDataPersistentContainer", withExtension: "momd") else {
             fatalError("Failed \(DebuggingIdentifiers.failed) to locate momd file")

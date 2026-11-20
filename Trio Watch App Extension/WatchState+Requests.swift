@@ -240,9 +240,10 @@ extension WatchState {
             let message = [WatchMessageKeys.requestWatchUpdate: WatchMessageKeys.watchState]
 
             session.sendMessage(message, replyHandler: { reply in
+                let payload = WatchPayload(reply)
                 DispatchQueue.main.async {
                     // Empty reply: the phone had no state.
-                    let accepted = !reply.isEmpty && self.acceptWatchStatePayload(reply)
+                    let accepted = !payload.dictionary.isEmpty && self.acceptWatchStatePayload(payload.dictionary)
                     self.endSync(hidingAnimation: !accepted)
                 }
             }, errorHandler: { error in

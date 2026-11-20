@@ -1,5 +1,6 @@
 import CoreData
 import Foundation
+import os
 import Swinject
 
 class TrioRemoteControl: Injectable {
@@ -28,20 +29,11 @@ class TrioRemoteControl: Injectable {
     /// Accessed only from `commandQueue`.
     @Persisted(key: "TrioRemoteControl.handledRemoteCommands") private var handledCommands = HandledRemoteCommands()
 
-    private let pendingRemoteBolusLock = NSLock()
-    private var pendingRemoteBolusValue: RemoteTreatmentGuard.InFlightBolus?
+    private let pendingRemoteBolusValue = OSAllocatedUnfairLock<RemoteTreatmentGuard.InFlightBolus?>(initialState: nil)
     /// The last remote bolus handed to the pump; counted by the treatment guard until it is in the dose history.
     var pendingRemoteBolus: RemoteTreatmentGuard.InFlightBolus? {
-        get {
-            pendingRemoteBolusLock.lock()
-            defer { pendingRemoteBolusLock.unlock() }
-            return pendingRemoteBolusValue
-        }
-        set {
-            pendingRemoteBolusLock.lock()
-            defer { pendingRemoteBolusLock.unlock() }
-            pendingRemoteBolusValue = newValue
-        }
+        get { pendingRemoteBolusValue.withLock { $0 } }
+        set { pendingRemoteBolusValue.withLock { $0 = newValue } }
     }
 
     /// Command ids of profile commands, kept for twice the accepted clock skew.
@@ -53,10 +45,10 @@ class TrioRemoteControl: Injectable {
 
     /// Clears the pending remote bolus if it is still `pending`.
     func clearPendingRemoteBolus(_ pending: RemoteTreatmentGuard.InFlightBolus) {
-        pendingRemoteBolusLock.lock()
-        defer { pendingRemoteBolusLock.unlock() }
-        if pendingRemoteBolusValue == pending {
-            pendingRemoteBolusValue = nil
+        pendingRemoteBolusValue.withLock { value in
+            if value == pending {
+                value = nil
+            }
         }
     }
 

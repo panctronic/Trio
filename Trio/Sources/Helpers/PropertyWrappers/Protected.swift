@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 private protocol Lock {
     func lock()
@@ -29,24 +30,14 @@ extension Lock {
 
 /// An `os_unfair_lock` wrapper.
 final class UnfairLock: Lock {
-    private let unfairLock: os_unfair_lock_t
-
-    init() {
-        unfairLock = .allocate(capacity: 1)
-        unfairLock.initialize(to: os_unfair_lock())
-    }
-
-    deinit {
-        unfairLock.deinitialize(count: 1)
-        unfairLock.deallocate()
-    }
+    private let unfairLock = OSAllocatedUnfairLock()
 
     fileprivate func lock() {
-        os_unfair_lock_lock(unfairLock)
+        unfairLock.lock()
     }
 
     fileprivate func unlock() {
-        os_unfair_lock_unlock(unfairLock)
+        unfairLock.unlock()
     }
 }
 

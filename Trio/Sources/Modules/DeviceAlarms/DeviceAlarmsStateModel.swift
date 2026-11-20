@@ -1,8 +1,8 @@
-import Combine
+import Observation
 import SwiftUI
 
 extension DeviceAlarms {
-    final class StateModel: BaseStateModel<Provider> {
+    @Observable final class StateModel: BaseStateModel<Provider> {
         override func subscribe() {}
     }
 }

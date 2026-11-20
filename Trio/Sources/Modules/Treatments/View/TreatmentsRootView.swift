@@ -537,8 +537,8 @@ extension Treatments {
         @State private var showConfirmDialogForBolusing = false
 
         private var bolusWarning: (shouldConfirm: Bool, warningMessage: String, color: Color) {
-            let isGlucoseVeryLow = state.currentBG < 54
-            let isForecastVeryLow = state.minPredBG < 54
+            let isGlucoseVeryLow = BolusRecommendationGuard.isVeryLow(state.currentBG)
+            let isForecastVeryLow = BolusRecommendationGuard.isVeryLow(state.minPredBG)
 
             // Only warn when enacting a bolus via pump
             guard !state.externalInsulin, state.amount > 0 else {

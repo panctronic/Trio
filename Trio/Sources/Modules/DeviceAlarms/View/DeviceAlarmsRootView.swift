@@ -18,7 +18,7 @@ private enum DeviceAlarmSheet: Identifiable {
 extension DeviceAlarms {
     struct RootView: BaseView {
         let resolver: Resolver
-        @StateObject var state = StateModel()
+        @State var state = StateModel()
         @StateObject private var store = DeviceAlertsStore.shared
 
         @State private var sheet: DeviceAlarmSheet?

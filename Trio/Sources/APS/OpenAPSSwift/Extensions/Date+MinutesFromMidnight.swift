@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum CalendarError: LocalizedError, Equatable {
     case invalidCalendar
@@ -24,8 +25,7 @@ enum WallClock {
         let timeZoneIdentifier: String
     }
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var cached: Interval?
+    private static let cache = OSAllocatedUnfairLock<Interval?>(initialState: nil)
 
     /// Seconds into the local day (wall clock), in [0, 86400).
     static func secondsIntoDay(of date: Date) -> Double {
@@ -40,32 +40,32 @@ enum WallClock {
         let timeZone = TimeZone.current
         let t = date.timeIntervalSince1970
 
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached,
-           cached.timeZoneIdentifier == timeZone.identifier,
-           t >= cached.start, t < cached.end
-        {
-            return cached.offsetSeconds
+        return cache.withLock { cached in
+            if let cached,
+               cached.timeZoneIdentifier == timeZone.identifier,
+               t >= cached.start, t < cached.end
+            {
+                return cached.offsetSeconds
+            }
+
+            let offset = timeZone.secondsFromGMT(for: date)
+            let end = timeZone.nextDaylightSavingTimeTransition(after: date)?
+                .timeIntervalSince1970 ?? .greatestFiniteMagnitude
+
+            // find the transition preceding `date`
+            var start = -TimeInterval.greatestFiniteMagnitude
+            var probe = date.addingTimeInterval(-366 * 86400)
+            for _ in 0 ..< 16 {
+                guard let transition = timeZone.nextDaylightSavingTimeTransition(after: probe),
+                      transition.timeIntervalSince1970 <= t
+                else { break }
+                start = transition.timeIntervalSince1970
+                probe = transition
+            }
+
+            cached = Interval(start: start, end: end, offsetSeconds: offset, timeZoneIdentifier: timeZone.identifier)
+            return offset
         }
-
-        let offset = timeZone.secondsFromGMT(for: date)
-        let end = timeZone.nextDaylightSavingTimeTransition(after: date)?
-            .timeIntervalSince1970 ?? .greatestFiniteMagnitude
-
-        // find the transition preceding `date`
-        var start = -TimeInterval.greatestFiniteMagnitude
-        var probe = date.addingTimeInterval(-366 * 86400)
-        for _ in 0 ..< 16 {
-            guard let transition = timeZone.nextDaylightSavingTimeTransition(after: probe),
-                  transition.timeIntervalSince1970 <= t
-            else { break }
-            start = transition.timeIntervalSince1970
-            probe = transition
-        }
-
-        cached = Interval(start: start, end: end, offsetSeconds: offset, timeZoneIdentifier: timeZone.identifier)
-        return offset
     }
 }
 

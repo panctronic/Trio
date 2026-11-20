@@ -1,10 +1,10 @@
 import Foundation
+import os
 
 /// Remembers command ids for a while, so a replayed command is recognized.
-final class RemoteCommandReplayGuard {
+final class RemoteCommandReplayGuard: Sendable {
     private let window: TimeInterval
-    private let lock = NSLock()
-    private var seen: [String: Date] = [:]
+    private let seen = OSAllocatedUnfairLock<[String: Date]>(initialState: [:])
 
     init(window: TimeInterval) {
         self.window = window
@@ -12,12 +12,13 @@ final class RemoteCommandReplayGuard {
 
     /// Records `id` and returns true, or returns false when `id` was recorded within the window.
     func register(_ id: String, at now: Date = Date()) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        seen = seen.filter { now.timeIntervalSince($0.value) < window }
-        guard seen[id] == nil else { return false }
-        seen[id] = now
-        return true
+        let window = self.window
+        return seen.withLock { seen in
+            seen = seen.filter { now.timeIntervalSince($0.value) < window }
+            guard seen[id] == nil else { return false }
+            seen[id] = now
+            return true
+        }
     }
 }
 

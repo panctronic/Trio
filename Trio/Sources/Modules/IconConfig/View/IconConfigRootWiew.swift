@@ -7,7 +7,7 @@ extension IconConfig {
         @Environment(AppState.self) var appState
 
         let resolver: Resolver
-        @StateObject var state = StateModel()
+        @State var state = StateModel()
 
         var body: some View {
             IconSelection()

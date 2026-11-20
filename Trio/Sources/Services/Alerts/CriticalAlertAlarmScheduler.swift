@@ -198,8 +198,8 @@ final class CriticalAlertAlarmScheduler {
     /// alarm. Carries the alert identifier as parameters so the system can
     /// reconstruct it.
     @available(iOS 26, *) struct StopCriticalAlertIntent: LiveActivityIntent {
-        static var title: LocalizedStringResource = "Stop Trio Alarm"
-        static var isDiscoverable: Bool = false
+        static let title: LocalizedStringResource = "Stop Trio Alarm"
+        static let isDiscoverable: Bool = false
 
         @Parameter(title: "Manager Identifier") var managerIdentifier: String
         @Parameter(title: "Alert Identifier") var alertIdentifier: String

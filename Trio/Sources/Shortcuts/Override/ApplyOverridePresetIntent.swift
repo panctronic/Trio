@@ -4,10 +4,10 @@ import Foundation
 /// An App Intent that allows users to activate an override preset through the Shortcuts app.
 struct ApplyOverridePresetIntent: AppIntent {
     /// The title displayed for this action in the Shortcuts app.
-    static var title = LocalizedStringResource("Activate an override")
+    static let title = LocalizedStringResource("Activate an override")
 
     /// The description displayed for this action in the Shortcuts app.
-    static var description = IntentDescription(.init("Activate an override"))
+    static let description = IntentDescription(.init("Activate an override"))
 
     /// The override preset to be applied.
     @Parameter(
