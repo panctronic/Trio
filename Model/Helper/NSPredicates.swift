@@ -49,6 +49,44 @@ extension Date {
     static var threeMonthsAgo: Date {
         Calendar.current.date(byAdding: .month, value: -3, to: Date())!
     }
+
+    /// Oldest record the Nightscout upload passes still pick up.
+    static var nightscoutUploadWindowStart: Date {
+        Calendar.current.date(byAdding: .day, value: -UploadBacklog.nightscoutDays, to: Date())!
+    }
+
+    /// Oldest record the Apple Health upload passes still pick up.
+    static var appleHealthUploadWindowStart: Date {
+        Calendar.current.date(byAdding: .day, value: -UploadBacklog.appleHealthDays, to: Date())!
+    }
+
+    /// Oldest record the Tidepool upload passes still pick up.
+    static var tidepoolUploadWindowStart: Date {
+        Calendar.current.date(byAdding: .day, value: -UploadBacklog.tidepoolDays, to: Date())!
+    }
+}
+
+/// How far back the "not yet uploaded" queries look, and how much one upload pass takes.
+///
+/// A record that could not be uploaded (phone offline, server outage, expired Tidepool login) is
+/// retried on every pass until it falls out of its window. All windows are shorter than the
+/// 90-day Core Data retention.
+///
+/// Passes fetch oldest first and at most `maxRowsPerPass` rows (`maxPumpEventsPerPass` for the
+/// Apple Health and Tidepool insulin uploads, whose payload can double with temp basal
+/// adjustments). Marking a batch as uploaded changes the result of the upload controllers'
+/// fetch, which requests the next pass, so a backlog drains in bounded steps.
+enum UploadBacklog {
+    /// Nightscout accepts back-dated entries and treatments; a week covers a long outage.
+    static let nightscoutDays = 7
+    /// Apple Health is written locally; a month covers long stretches without permission or
+    /// with the device locked.
+    static let appleHealthDays = 30
+    /// A Tidepool login can stay expired for weeks before anyone notices.
+    static let tidepoolDays = 30
+
+    static let maxRowsPerPass = 1000
+    static let maxPumpEventsPerPass = 500
 }
 
 extension NSPredicate {

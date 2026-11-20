@@ -444,14 +444,12 @@ extension BaseTidepoolManager {
         do {
             let context = CoreDataStack.shared.newTaskContext()
             context.name = "uploadDose"
-            // Fetch all temp basal entries from Core Data for the last 24 hours
+            // Fetch the temp basal entries around the events being uploaded
             let results = try await CoreDataStack.shared.fetchEntitiesAsync(
                 ofType: PumpEventStored.self,
                 onContext: context,
-                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
-                    NSPredicate.pumpHistoryLast24h,
-                    NSPredicate(format: "tempBasal != nil")
-                ]),
+                // the events can be up to the upload window old, not just from the last day
+                predicate: NSPredicate.tempBasalsAround(events.map(\.timestamp)),
                 key: "timestamp",
                 ascending: true,
                 batchSize: 50

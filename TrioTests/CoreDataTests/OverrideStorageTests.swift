@@ -248,8 +248,9 @@ import Testing
             let stale = OverrideRunStored(context: self.testContext)
             stale.id = UUID()
             stale.name = "Stale"
-            stale.startDate = now.addingTimeInterval(-72 * hour)
-            stale.endDate = now.addingTimeInterval(-48 * hour)
+            // ended before the 7-day Nightscout upload window
+            stale.startDate = now.addingTimeInterval(-9 * 24 * hour)
+            stale.endDate = now.addingTimeInterval(-8 * 24 * hour)
             stale.isUploadedToNS = false
 
             let uploaded = OverrideRunStored(context: self.testContext)
@@ -268,7 +269,7 @@ import Testing
         // Then
         #expect(
             runs.compactMap(\.notes).sorted() == ["Long running", "Recent"],
-            "Runs that ended within the last day are uploaded, whenever they started"
+            "Runs that ended within the upload window are uploaded, whenever they started"
         )
 
         let longRunning = try #require(runs.first { $0.notes == "Long running" })

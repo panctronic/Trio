@@ -546,7 +546,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToNightscout,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -620,7 +621,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToHealth,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -655,7 +657,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToHealth,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -690,7 +693,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.glucoseNotYetUploadedToTidepool,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {
@@ -726,7 +730,8 @@ final class BaseGlucoseStorage: GlucoseStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.manualGlucoseNotYetUploadedToTidepool,
             key: "date",
-            ascending: false
+            ascending: true,
+            fetchLimit: UploadBacklog.maxRowsPerPass
         )
 
         return try await context.perform {

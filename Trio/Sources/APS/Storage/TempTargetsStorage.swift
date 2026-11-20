@@ -298,7 +298,7 @@ final class BaseTempTargetsStorage: TempTargetsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate.lastActiveAdjustmentNotYetUploadedToNightscout,
             key: "date",
-            ascending: false
+            ascending: true
         )
 
         return try await context.perform {
@@ -338,11 +338,11 @@ final class BaseTempTargetsStorage: TempTargetsStorage, Injectable {
             onContext: context,
             predicate: NSPredicate(
                 format: "endDate >= %@ AND isUploadedToNS == %@",
-                Date.oneDayAgo as NSDate,
+                Date.nightscoutUploadWindowStart as NSDate,
                 false as NSNumber
             ),
             key: "startDate",
-            ascending: false
+            ascending: true
         )
 
         return try await context.perform {

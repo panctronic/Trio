@@ -312,6 +312,35 @@ import Testing
         #expect(storage.alarm == nil, "Should not trigger any alarm")
     }
 
+    @Test("Upload queries cover each service's backlog window, oldest first") func testUploadBacklogWindows() async throws {
+        let now = Date()
+        let daysAgo: [Double] = [0.1, 2, 6, 10, 29, 35]
+        try await testContext.perform {
+            for (index, days) in daysAgo.enumerated() {
+                let entry = GlucoseStored(context: testContext)
+                entry.id = UUID()
+                entry.date = now.addingTimeInterval(-days * 24 * 3600)
+                entry.glucose = Int16(200 + index)
+                entry.isManual = false
+                entry.isUploadedToNS = false
+                entry.isUploadedToHealth = false
+                entry.isUploadedToTidepool = false
+            }
+            try testContext.save()
+        }
+
+        // Nightscout: 7 days, so the 2- and 6-day-old readings that a 24 h window missed are included.
+        let nightscout = try await storage.getGlucoseNotYetUploadedToNightscout().compactMap(\.sgv)
+        #expect(nightscout == [202, 201, 200])
+
+        // Apple Health and Tidepool: 30 days.
+        let health = try await storage.getGlucoseNotYetUploadedToHealth().compactMap(\.sgv)
+        #expect(health == [204, 203, 202, 201, 200])
+        let tidepool = try await storage.getGlucoseNotYetUploadedToTidepool()
+        #expect(tidepool.count == 5)
+        #expect(tidepool.map(\.startDate) == tidepool.map(\.startDate).sorted())
+    }
+
     @Test("Sensor changes marked as uploaded are not offered again") func testCGMStateMarkedUploaded() async throws {
         let fileStorage = try #require(resolver.resolve(FileStorage.self))
         // Whole seconds, so the dates survive the JSON round trip through the files unchanged.

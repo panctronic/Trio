@@ -406,10 +406,8 @@ final class BaseHealthKitManager: HealthKitManager, Injectable {
             let fetchedInsulinEntries = try await CoreDataStack.shared.fetchEntitiesAsync(
                 ofType: PumpEventStored.self,
                 onContext: context,
-                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
-                    NSPredicate.pumpHistoryLast24h,
-                    NSPredicate(format: "tempBasal != nil")
-                ]),
+                // the events can be up to the upload window old, not just from the last day
+                predicate: NSPredicate.tempBasalsAround(insulinEvents.map(\.timestamp)),
                 key: "timestamp",
                 ascending: true,
                 batchSize: 50

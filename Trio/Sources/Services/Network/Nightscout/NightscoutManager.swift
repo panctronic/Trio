@@ -147,7 +147,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \OverrideStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -166,7 +166,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \OverrideRunStored.startDate, ascending: true)]
         request.predicate = NSPredicate(
             format: "startDate >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -185,7 +185,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \TempTargetStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -204,7 +204,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \TempTargetRunStored.startDate, ascending: true)]
         request.predicate = NSPredicate(
             format: "startDate >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         let controller = NSFetchedResultsController(
@@ -239,7 +239,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         request.sortDescriptors = [NSSortDescriptor(keyPath: \CarbEntryStored.date, ascending: true)]
         request.predicate = NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@",
-            Date.oneDayAgo as NSDate,
+            Date.nightscoutUploadWindowStart as NSDate,
             false as NSNumber
         )
         request.fetchBatchSize = 50
@@ -953,13 +953,12 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         }
 
         do {
-            // Upload in Batches of 100
+            // Upload in batches of 100, marking each batch as soon as it is accepted so a later
+            // failure doesn't send the earlier batches again
             for chunk in glucose.chunks(ofCount: 100) {
                 try await nightscout.uploadGlucose(Array(chunk))
+                await updateGlucoseAsUploaded(Array(chunk))
             }
-
-            // If successful, update the isUploadedToNS property of the GlucoseStored objects
-            await updateGlucoseAsUploaded(glucose)
 
             info(.nightscout, "Uploaded \(glucose.count) glucose values")
         } catch {
@@ -1016,9 +1015,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             for chunk in treatments.chunks(ofCount: 100) {
                 try await nightscout.uploadTreatments(Array(chunk))
+                await updatePumpEventStoredsAsUploaded(Array(chunk))
             }
-
-            await updatePumpEventStoredsAsUploaded(treatments)
 
             info(.nightscout, "Uploaded \(treatments.count) pump events")
         } catch {
@@ -1082,10 +1080,8 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         do {
             for chunk in treatments.chunks(ofCount: 100) {
                 try await nightscout.uploadTreatments(Array(chunk))
+                await updateCarbsAsUploaded(Array(chunk))
             }
-
-            // If successful, update the isUploadedToNS property of the CarbEntryStored objects
-            await updateCarbsAsUploaded(treatments)
 
             info(.nightscout, "Uploaded \(treatments.count) carb entries")
         } catch {

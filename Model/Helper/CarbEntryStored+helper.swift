@@ -26,7 +26,7 @@ extension NSPredicate {
     }
 
     static var carbsNotYetUploadedToNightscout: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.nightscoutUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@ AND isFPU == %@ AND carbs > 0",
             date as NSDate,
@@ -36,7 +36,7 @@ extension NSPredicate {
     }
 
     static var carbsNotYetUploadedToHealth: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.appleHealthUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToHealth == %@",
             date as NSDate,
@@ -45,7 +45,7 @@ extension NSPredicate {
     }
 
     static var carbsNotYetUploadedToTidepool: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.tidepoolUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToTidepool == %@",
             date as NSDate,
@@ -54,7 +54,7 @@ extension NSPredicate {
     }
 
     static var fpusNotYetUploadedToNightscout: NSPredicate {
-        let date = Date.oneDayAgo
+        let date = Date.nightscoutUploadWindowStart
         return NSPredicate(
             format: "date >= %@ AND isUploadedToNS == %@ AND isFPU == %@",
             date as NSDate,
