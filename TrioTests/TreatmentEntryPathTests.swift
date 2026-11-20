@@ -70,6 +70,40 @@ import Testing
         #expect(linked.linkingCarbEquivalents(orphanID) == linked, "A meal's own fpuID is never replaced")
     }
 
+    // MARK: - External insulin
+
+    @Test("External insulin is rounded to the increment without a volume cap") func testExternalInsulinRounding() {
+        #expect(ExternalInsulin.rounded(40, toIncrement: 0.05) == 40, "40 U taken must not be logged as a pump's 30 U maximum")
+        #expect(
+            ExternalInsulin
+                .rounded(Decimal(string: "2.37")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.35")!
+        )
+        #expect(
+            ExternalInsulin
+                .rounded(Decimal(string: "2.35")!, toIncrement: Decimal(string: "0.05")!) == Decimal(string: "2.35")!
+        )
+        #expect(ExternalInsulin.rounded(-1, toIncrement: 0.05) == 0)
+    }
+
+    @Test("External insulin above max bolus is always confirmed with a warning") func testExternalInsulinConfirmation() {
+        #expect(ExternalInsulin.needsExplicitConfirmation(12, maxBolus: 10))
+        #expect(!ExternalInsulin.needsExplicitConfirmation(10, maxBolus: 10))
+
+        let plain = BolusIntentRequest.confirmationMessage(requested: 12, deliverable: 12, isExternal: true)
+        let warned = BolusIntentRequest.confirmationMessage(requested: 12, deliverable: 12, isExternal: true, aboveMaxBolus: 10)
+        #expect(warned.count > plain.count)
+        #expect(warned.contains(Decimal(10).formatted()))
+    }
+
+    @Test("A failed forecast update after external insulin says the insulin was logged") func testExternalInsulinLoggedMessage() {
+        let message = ExternalInsulin.loggedButForecastFailedMessage(
+            amount: 4,
+            error: NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "timeout"])
+        )
+        #expect(message.contains(Decimal(4).formatted()))
+        #expect(message.contains("timeout"))
+    }
+
     // MARK: - Shortcut bolus
 
     @Test("Shortcut confirmation names the rounded amount") func testShortcutConfirmationRounded() {

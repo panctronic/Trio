@@ -65,15 +65,21 @@ struct BolusIntent: AppIntent {
             let amount: Double = bolusQuantity
             let request = BolusIntentRequest()
 
-            if confirmBeforeApplying {
-                // Confirm the amount the pump will deliver, not the unrounded amount typed in
+            // Confirm the amount that will be delivered or logged, not the unrounded amount typed in
+            let deliverable = externalInsulin ? request.externalAmount(amount) : request.deliverableAmount(amount)
+            let maxBolus = request.settingsManager.pumpSettings.maxBolus
+            // External insulin above max bolus is always confirmed, even if the Shortcut skips confirmation
+            let isExternalAboveMaxBolus = externalInsulin &&
+                ExternalInsulin.needsExplicitConfirmation(deliverable, maxBolus: maxBolus)
+            if confirmBeforeApplying || isExternalAboveMaxBolus {
                 try await requestConfirmation(
                     result: .result(
                         dialog: IntentDialog(
                             stringLiteral: BolusIntentRequest.confirmationMessage(
                                 requested: amount,
-                                deliverable: request.deliverableAmount(amount),
-                                isExternal: externalInsulin
+                                deliverable: deliverable,
+                                isExternal: externalInsulin,
+                                aboveMaxBolus: isExternalAboveMaxBolus ? maxBolus : nil
                             )
                         )
                     )

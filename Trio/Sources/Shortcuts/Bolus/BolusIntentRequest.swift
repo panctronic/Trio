@@ -12,17 +12,42 @@ final class BolusIntentRequest: BaseIntentsRequest {
         return Decimal(pump.roundToSupportedBolusVolume(units: amount)).rounded(scale: 3)
     }
 
+    /// The amount of external insulin that will be logged: rounded down to the bolus increment, without the pump's
+    /// largest-volume cap, which would under-report insulin taken by pen.
+    func externalAmount(_ amount: Double) -> Decimal {
+        ExternalInsulin.rounded(Decimal(amount).rounded(scale: 3), toIncrement: settingsManager.preferences.bolusIncrement)
+    }
+
     /// The confirmation question shown before a Shortcut bolus, naming the amount that will really be delivered or logged.
-    static func confirmationMessage(requested: Double, deliverable: Decimal, isExternal: Bool) -> String {
+    /// - Parameter maxBolus: Set when external insulin above max bolus is confirmed, to warn about it.
+    static func confirmationMessage(
+        requested: Double,
+        deliverable: Decimal,
+        isExternal: Bool,
+        aboveMaxBolus maxBolus: Decimal? = nil
+    ) -> String {
         let deliverableFormatted = deliverable.formatted()
         var message = isExternal
             ? String(localized: "Are you sure to log \(deliverableFormatted) U of external insulin?")
             : String(localized: "Are you sure to bolus \(deliverableFormatted) U of insulin?")
         if deliverable != Decimal(requested).rounded(scale: 3) {
             let requestedFormatted = Decimal(requested).rounded(scale: 3).formatted()
+            message += " " + (
+                isExternal
+                    ? String(
+                        localized: "\(requestedFormatted) U was rounded down to the bolus increment.",
+                        comment: "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
+                    )
+                    : String(
+                        localized: "\(requestedFormatted) U was rounded down to what the pump can deliver.",
+                        comment: "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
+                    )
+            )
+        }
+        if let maxBolus {
             message += " " + String(
-                localized: "\(requestedFormatted) U was rounded down to what the pump can deliver.",
-                comment: "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
+                localized: "This is more than your max bolus of \(maxBolus.formatted()) U. Check the amount before logging it.",
+                comment: "Added to the Shortcut confirmation for external insulin above max bolus"
             )
         }
         return message
@@ -91,11 +116,16 @@ final class BolusIntentRequest: BaseIntentsRequest {
                 "The external bolus cannot be larger than 3 x the pump setting max bolus (\(settingsManager.pumpSettings.maxBolus.description))."
             )
         } else {
-            // Rounded like a pump bolus but not capped at max bolus: external insulin up to 3 x max bolus is logged in full
-            let bolusQuantity = deliverableAmount(bolusAmount)
+            // Rounded to the increment but not capped: external insulin up to 3 x max bolus is logged in full
+            let bolusQuantity = externalAmount(bolusAmount)
             await pumpHistoryStorage.storeExternalInsulinEvent(amount: bolusQuantity, timestamp: Date())
             // perform determine basal sync
-            try await apsManager.determineBasalSync()
+            do {
+                try await apsManager.determineBasalSync()
+            } catch {
+                warning(.bolus, "Determination after Shortcut external insulin failed", error: error)
+                return ExternalInsulin.loggedButForecastFailedMessage(amount: bolusQuantity, error: error)
+            }
 
             return String(
                 localized:

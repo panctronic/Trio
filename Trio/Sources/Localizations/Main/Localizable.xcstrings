@@ -1092,6 +1092,12 @@
     "%@ g is more than the max carbs of %@ g." : {
       "comment" : "Watch message when carbs above the max carbs setting are refused"
     },
+    "%@ U of external insulin was logged. Do not log it again. Only updating the forecast failed: %@" : {
+      "comment" : "Message when external insulin was saved but the following determination failed; the arguments are the amount and the reason"
+    },
+    "%@ U was rounded down to the bolus increment." : {
+      "comment" : "Added to the Shortcut external insulin confirmation when the amount is rounded to the bolus increment"
+    },
     "%@ U was rounded down to what the pump can deliver." : {
       "comment" : "Added to the Shortcut bolus confirmation when the requested amount is rounded to the pump's increment"
     },
@@ -1154,6 +1160,9 @@
     },
     "This insulin is still active. Deleting it lowers IOB, so Trio may dose more insulin. Only delete it if it was not actually taken." : {
       "comment" : "Warning when deleting external insulin that is still active"
+    },
+    "This is more than your max bolus of %@ U. Check the amount before logging it." : {
+      "comment" : "Added to the Shortcut confirmation for external insulin above max bolus"
     },
     "This SMB was delivered by the pump and is still active. Deleting it does not undo the delivery, but it lowers IOB, so Trio may dose more insulin than is safe." : {
       "comment" : "Warning when deleting an SMB that is still active"
