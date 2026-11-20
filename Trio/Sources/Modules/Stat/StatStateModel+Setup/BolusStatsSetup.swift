@@ -51,26 +51,15 @@ extension Stat.StateModel {
         let bolusTaskContext = CoreDataStack.shared.newTaskContext()
         bolusTaskContext.name = "StatStateModel.fetchBolusStats"
 
-        // Fetch PumpEventStored entries from Core Data
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        // Fetch BolusStored entries from Core Data and process them within the context's thread
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: BolusStored.self,
             onContext: bolusTaskContext,
             predicate: NSPredicate.pumpHistoryForStats,
             key: "pumpEvent.timestamp",
             ascending: true,
             batchSize: 100
-        )
-
-        // Variables to hold the results
-        var hourlyStats: [BolusStats] = []
-        var dailyStats: [BolusStats] = []
-
-        // Process CoreData results within the context's thread
-        await bolusTaskContext.perform {
-            guard let fetchedResults = results as? [BolusStored] else {
-                return
-            }
-
+        ) { fetchedResults in
             let calendar = Calendar.current
 
             // Group entries by hour for hourly statistics
@@ -94,7 +83,7 @@ extension Stat.StateModel {
             }
 
             // Process hourly stats
-            hourlyStats = hourlyGrouped.keys.sorted().map { timePoint in
+            let hourlyStats = hourlyGrouped.keys.sorted().map { timePoint in
                 let entries = hourlyGrouped[timePoint, default: []]
                 return BolusStats(
                     date: timePoint,
@@ -120,7 +109,7 @@ extension Stat.StateModel {
             }
 
             // Process daily stats
-            dailyStats = dailyGrouped.keys.sorted().map { timePoint in
+            let dailyStats = dailyGrouped.keys.sorted().map { timePoint in
                 let entries = dailyGrouped[timePoint, default: []]
                 return BolusStats(
                     date: timePoint,
@@ -144,9 +133,9 @@ extension Stat.StateModel {
                     }
                 )
             }
-        }
 
-        return (hourlyStats, dailyStats)
+            return (hourlyStats, dailyStats)
+        }
     }
 
     /// Calculates and caches the daily averages of bolus insulin

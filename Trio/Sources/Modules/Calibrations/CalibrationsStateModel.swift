@@ -39,7 +39,7 @@ extension Calibrations {
 
         /// - Returns: An array of NSManagedObjectIDs for glucose readings.
         private func fetchGlucose() async throws -> [NSManagedObjectID] {
-            let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+            try await CoreDataStack.shared.fetchObjectIDs(
                 ofType: GlucoseStored.self,
                 onContext: backgroundContext,
                 predicate: NSPredicate.predicateFor20MinAgo,
@@ -47,14 +47,6 @@ extension Calibrations {
                 ascending: false,
                 fetchLimit: 1 /// We only need the last value
             )
-
-            return try await backgroundContext.perform {
-                guard let glucoseResults = results as? [GlucoseStored] else {
-                    throw CoreDataError.fetchError(function: #function, file: #file)
-                }
-
-                return glucoseResults.map(\.objectID)
-            }
         }
 
         @MainActor func addCalibration() async {

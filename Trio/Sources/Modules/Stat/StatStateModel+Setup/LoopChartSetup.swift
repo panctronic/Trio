@@ -101,7 +101,7 @@ extension Stat.StateModel {
         }
 
         // Perform both fetches asynchronously
-        async let allLoopsResult = CoreDataStack.shared.fetchEntitiesAsync(
+        async let allLoopIDs = CoreDataStack.shared.fetchObjectIDs(
             ofType: LoopStatRecord.self,
             onContext: loopTaskContext,
             predicate: NSPredicate(format: "start > %@", startDate as NSDate),
@@ -109,7 +109,7 @@ extension Stat.StateModel {
             ascending: false
         )
 
-        async let failedLoopsResult = CoreDataStack.shared.fetchEntitiesAsync(
+        async let failedLoopIDs = CoreDataStack.shared.fetchObjectIDs(
             ofType: LoopStatRecord.self,
             onContext: loopTaskContext,
             predicate: NSPredicate(
@@ -121,13 +121,8 @@ extension Stat.StateModel {
             ascending: false
         )
 
-        // Wait for both results and convert to object IDs
-        let (allLoops, failedLoops) = try await (allLoopsResult, failedLoopsResult)
-
-        return (
-            (allLoops as? [LoopStatRecord] ?? []).map(\.objectID),
-            (failedLoops as? [LoopStatRecord] ?? []).map(\.objectID)
-        )
+        // Wait for both results
+        return try await (allLoopIDs, failedLoopIDs)
     }
 
     /// Updates the loopStatRecords array on the main thread with records from the provided IDs
@@ -249,19 +244,14 @@ extension Stat.StateModel {
         let glucosePredicate = NSPredicate(format: "date >= %@", startDate as NSDate)
 
         // Fetch glucose readings asynchronously
-        let glucoseResult = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: GlucoseStored.self,
             onContext: loopTaskContext,
             predicate: glucosePredicate,
             key: "date",
             ascending: false
-        )
-
-        return await loopTaskContext.perform {
-            guard let readings = glucoseResult as? [GlucoseStored] else {
-                return 0
-            }
-            return readings.count
+        ) { readings in
+            readings.count
         }
     }
 }

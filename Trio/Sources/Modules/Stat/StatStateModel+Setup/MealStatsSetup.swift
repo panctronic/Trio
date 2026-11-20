@@ -52,19 +52,14 @@ extension Stat.StateModel {
         mealTaskContext.name = "StatStateModel.fetchMealStats"
 
         // Fetch CarbEntryStored entries from Core Data
-        let results = try await CoreDataStack.shared.fetchEntitiesAsync(
+        return try await CoreDataStack.shared.fetchAndMap(
             ofType: CarbEntryStored.self,
             onContext: mealTaskContext,
             predicate: NSPredicate.carbsForStats,
             key: "date",
             ascending: true,
             batchSize: 100
-        )
-
-        return await mealTaskContext.perform {
-            // Safely unwrap the fetched results, return empty arrays if nil
-            guard let fetchedResults = results as? [CarbEntryStored] else { return ([], []) }
-
+        ) { fetchedResults in
             let calendar = Calendar.current
 
             // Group entries by hour for hourly statistics
