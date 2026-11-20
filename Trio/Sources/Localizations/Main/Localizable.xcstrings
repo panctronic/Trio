@@ -1212,11 +1212,17 @@
     "Sync Status" : {
       "comment" : "Title of the screen showing upload status per destination"
     },
+    "The bolus was delivered. Do not bolus again. Glucose data is stale, so the forecast was not updated." : {
+      "comment" : "Alert after a successful bolus when glucose data is stale"
+    },
     "The carbs could not be saved, so no insulin was given or logged. Please try again." : {
       "comment" : "Alert when saving the meal failed on the treatments screen"
     },
     "The carbs were saved. Do not enter them again. Only updating the forecast failed: %@" : {
       "comment" : "Alert when a meal was saved but the following determination failed; the argument is the reason"
+    },
+    "The external insulin was logged. Do not log it again. Glucose data is stale, so the forecast was not updated." : {
+      "comment" : "Alert after logging external insulin when glucose data is stale"
     },
     "The oldest waiting records have left the upload window and will not be uploaded." : {
       "comment" : "Sync status warning"

@@ -143,6 +143,13 @@ import Testing
         #expect(message.contains("saved"), "The user must learn the carbs are already saved")
     }
 
+    @Test("Stale glucose after insulin says the insulin was given") func testInsulinGivenGlucoseStale() {
+        let pump = Treatments.StateModel.insulinGivenButGlucoseStaleMessage(isExternal: false)
+        let external = Treatments.StateModel.insulinGivenButGlucoseStaleMessage(isExternal: true)
+        #expect(pump.contains("delivered"))
+        #expect(external.contains("logged"))
+    }
+
     @Test("A failed bolus without a meal shows the pump's reason") func testBolusFailedMessage() {
         let failed = Treatments.StateModel.bolusFailedMessage(for: .failed(message: "Rounds to 0 U", error: nil))
         #expect(failed.contains("Rounds to 0 U"))

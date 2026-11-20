@@ -557,12 +557,10 @@ extension Treatments {
             }
 
             guard glucoseStorage.isGlucoseDataFresh(date) else {
-                await MainActor.run {
-                    isAwaitingDeterminationResult = false
-                    showDeterminationFailureAlert = true
-                    determinationFailureMessage = "Glucose data is stale"
-                }
-                return hideModal()
+                // The insulin was given or logged; only the forecast is stale. A bare "Glucose data is stale" under
+                // "Error while processing Treatment" read as a failed bolus and invited a second one.
+                await showSubmissionFailure(Self.insulinGivenButGlucoseStaleMessage(isExternal: externalInsulin))
+                return
             }
 
             // The determination that would close the screen may have arrived while the bolus was being enacted
@@ -873,6 +871,19 @@ extension Treatments {
                 warning(.treatments, "Determination after meal failed", error: error)
                 await showSubmissionFailure(Self.mealSavedButForecastFailedMessage(error: error))
             }
+        }
+
+        /// The insulin was delivered (or logged) but glucose data is too old for the forecast to be updated.
+        static func insulinGivenButGlucoseStaleMessage(isExternal: Bool) -> String {
+            isExternal
+                ? String(
+                    localized: "The external insulin was logged. Do not log it again. Glucose data is stale, so the forecast was not updated.",
+                    comment: "Alert after logging external insulin when glucose data is stale"
+                )
+                : String(
+                    localized: "The bolus was delivered. Do not bolus again. Glucose data is stale, so the forecast was not updated.",
+                    comment: "Alert after a successful bolus when glucose data is stale"
+                )
         }
 
         /// The meal was saved and only the forecast update failed.
