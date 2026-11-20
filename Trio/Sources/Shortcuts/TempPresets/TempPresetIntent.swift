@@ -6,7 +6,7 @@ import Swinject
 /// Represents a temporary target preset that can be used in the app.
 struct TempPreset: AppEntity, Identifiable {
     /// Default query instance for fetching temporary presets.
-    static var defaultQuery = TempPresetsQuery()
+    static let defaultQuery = TempPresetsQuery()
 
     /// Unique identifier for the temporary preset.
     var id: UUID
@@ -29,7 +29,7 @@ struct TempPreset: AppEntity, Identifiable {
     }
 
     /// Representation for the entity type when displayed in UI.
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Presets"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Presets"
 }
 
 /// Query structure for fetching temporary target presets in an App Intent.

@@ -3,10 +3,10 @@ import Foundation
 
 @available(iOS 16.0, *) struct ListStateIntent: AppIntent {
     // Title of the action in the Shortcuts app
-    static var title: LocalizedStringResource = "List last state available with Trio"
+    static let title: LocalizedStringResource = "List last state available with Trio"
 
     // Description of the action in the Shortcuts app
-    static var description = IntentDescription(
+    static let description = IntentDescription(
         "Allow to list the last glucose reading, trends, IOB and COB available in Trio"
     )
 

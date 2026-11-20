@@ -74,7 +74,7 @@ private extension LiveActivityAttributes {
 }
 
 private extension LiveActivityAttributes.ContentState {
-    static var chartData: [MockGlucoseData] = [
+    static let chartData: [MockGlucoseData] = [
         MockGlucoseData(
             glucose: 120,
             date: Date().addingTimeInterval(-600),
@@ -88,7 +88,7 @@ private extension LiveActivityAttributes.ContentState {
         MockGlucoseData(glucose: 130, date: Date(), direction: "flat")
     ]
 
-    static var detailedViewState =
+    static let detailedViewState =
         LiveActivityAttributes.ContentAdditionalState(
             chart: chartData.map {
                 LiveActivityAttributes.ChartItem(value: Decimal($0.glucose), date: $0.date)

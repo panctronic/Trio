@@ -5,10 +5,10 @@ import Swinject
 
 struct AddCarbPresetIntent: AppIntent {
     // Title of the action in the Shortcuts app
-    static var title: LocalizedStringResource = "Add carbs"
+    static let title: LocalizedStringResource = "Add carbs"
 
     // Description of the action in the Shortcuts app
-    static var description = IntentDescription(LocalizedStringResource("Allow to add carbs in Trio."))
+    static let description = IntentDescription(LocalizedStringResource("Allow to add carbs in Trio."))
 
     @Parameter(
         title: "Quantity Carbs",

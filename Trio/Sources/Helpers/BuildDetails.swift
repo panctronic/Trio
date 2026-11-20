@@ -2,7 +2,7 @@ import Foundation
 import Swinject
 
 class BuildDetails: Injectable {
-    static var shared = BuildDetails()
+    static let shared = BuildDetails()
     @Injected() internal var nightscoutManager: NightscoutManager!
 
     let dict: [String: Any]
