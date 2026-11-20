@@ -118,8 +118,10 @@ struct SensitiveValues {
         }
     }
 
-    mutating func addTrioIdentifiers(defaults: UserDefaults = .standard) {
-        add(defaults.string(forKey: "trioRemoteControlSharedSecret"), .remoteSecret)
+    mutating func addTrioIdentifiers(remoteSecret: String? = nil, defaults: UserDefaults = .standard) {
+        add(remoteSecret, .remoteSecret)
+        // where versions before the Keychain move kept it, in case it hasn't been moved yet
+        add(defaults.string(forKey: RemoteControlSecretStore.key), .remoteSecret)
         add(defaults.string(forKey: "deviceToken"), .pushToken)
         add(PropertyPersistentFlags.shared.telemetryInstallId, .installID)
     }

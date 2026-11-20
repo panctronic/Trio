@@ -15,6 +15,7 @@ class TrioRemoteControl: Injectable {
     @Injected() internal var carbEntryMutationService: CarbEntryMutationService!
     @Injected() internal var apsManager: APSManager!
     @Injected() internal var therapyProfileManager: TherapyProfileManager!
+    @Injected() internal var keychain: Keychain!
 
     /// How long before now a command may have been sent.
     static let timeWindow: TimeInterval = 720
@@ -96,7 +97,7 @@ class TrioRemoteControl: Injectable {
             return
         }
 
-        let storedSecret = UserDefaults.standard.string(forKey: "trioRemoteControlSharedSecret") ?? ""
+        let storedSecret = RemoteControlSecretStore.secret(keychain: keychain) ?? ""
         guard !storedSecret.isEmpty else {
             await logError("Command rejected: shared secret is missing in settings. Cannot authenticate the command.")
             return

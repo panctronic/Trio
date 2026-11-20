@@ -285,7 +285,7 @@ final class LogExport: Injectable {
                 url: keychain.getValue(String.self, forKey: NightscoutConfig.Config.urlKey),
                 secret: keychain.getValue(String.self, forKey: NightscoutConfig.Config.secretKey)
             )
-            values.addTrioIdentifiers()
+            values.addTrioIdentifiers(remoteSecret: RemoteControlSecretStore.secret(keychain: keychain))
         }
         values.add(tidepool: tidepoolManager?.getTidepoolServiceUI() as? TidepoolService)
         let (pump, cgm) = currentManagers()
